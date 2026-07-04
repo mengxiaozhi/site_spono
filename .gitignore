@@ -1,0 +1,15 @@
+node_modules
+.next
+out
+dist
+coverage
+.env
+.env.local
+.DS_Store
+*.tsbuildinfo
+.npm-cache
+data/*.db
+data/*.db-*
+storage/sites/*
+!storage/sites/.gitkeep
+npm-debug.log*

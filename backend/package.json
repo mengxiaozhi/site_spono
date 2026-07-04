@@ -1,0 +1,29 @@
+{
+  "name": "@site-spono/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "node --watch server.mjs",
+    "start": "node server.mjs",
+    "lint": "node --check server.mjs && node --check src/app.mjs && node --check src/auth.mjs && node --check src/config.mjs && node --check src/database.mjs && node --check src/demo.mjs && node --check src/domains.mjs && node --check src/routes.mjs && node --check src/static-sites.mjs && node --check src/storage.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "mime-types": "^2.1.35",
+    "multer": "^2.0.2",
+    "yauzl": "^3.2.0"
+  },
+  "devDependencies": {
+    "jszip": "^3.10.1"
+  }
+}
