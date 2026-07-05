@@ -37,6 +37,12 @@ NEXT_PUBLIC_API_BASE_URL=https://api.spono.tw/site
 
 With this setup, frontend requests to `https://api.spono.tw/site/api/...` are proxied to backend routes under `/api/...`, credentialed CORS echoes `https://site.spono.tw`, and preview links use `https://api.spono.tw/site/s/:slug/`.
 
+## Gemini Site Generation
+
+Set `GEMINI_API_KEY` on the backend to enable the dashboard's AI website generator. `GEMINI_MODEL` defaults to `gemini-3.5-flash`.
+
+The generator creates a static deployment from two files: `index.html` and `assets/style.css`. Generated output is rejected when it contains script tags, inline event handlers, `javascript:` URLs, forms, iframes, or external CSS/link resources.
+
 On startup, the backend verifies the configured MySQL database and creates the required tables when they are missing. If the database user cannot create the database or tables, startup fails with a logged MySQL error code. After deployment, verify the backend and database path with:
 
 ```bash
@@ -48,8 +54,8 @@ If the browser reports a CORS failure but this command returns a Cloudflare `502
 ## Core Flow
 
 1. Register or log in with Email and password.
-2. Create a site.
-3. Upload a `.zip` containing a root-level `index.html`.
+2. Generate the first version with Gemini, or create an empty site manually.
+3. Upload a `.zip` containing a root-level `index.html` when you already have site files.
 4. Preview the active deployment from the backend preview URL.
 5. Add a custom domain and point its CNAME to `CNAME_TARGET`.
 6. Run verification from the dashboard.

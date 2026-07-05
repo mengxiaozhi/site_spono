@@ -38,7 +38,8 @@ async function createHarness(options = {}) {
   const app = createApp({
     config,
     db,
-    dnsResolver: options.dnsResolver
+    dnsResolver: options.dnsResolver,
+    siteGenerator: options.siteGenerator
   });
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -258,6 +259,90 @@ test("uploads a valid static site zip and serves preview assets", async () => {
     const css = await fetch(`${harness.baseUrl}/s/${site.slug}/assets/app.css`);
     assert.equal(css.status, 200);
     assert.match(await css.text(), /color:green/);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("generates a Gemini static site deployment", async () => {
+  const harness = await createHarness({
+    siteGenerator: async ({ input }) => ({
+      siteName: input.name,
+      summary: "Generated landing page",
+      files: {
+        indexHtml: `<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="assets/style.css">
+  <title>${input.name}</title>
+</head>
+<body><main><h1>${input.name}</h1><p>${input.brief}</p></main></body>
+</html>`,
+        css: "body{font-family:sans-serif;color:#123;background:#fff}"
+      }
+    })
+  });
+
+  try {
+    const api = harness.client();
+    const register = await api.request("/api/auth/register", {
+      method: "POST",
+      body: { email: `${crypto.randomUUID()}@example.com`, password: "password123" }
+    });
+    assert.equal(register.response.status, 201);
+
+    const generated = await api.request("/api/sites/generate", {
+      method: "POST",
+      body: {
+        name: "Gemini Brand",
+        brief: "幫我生成一個科技顧問公司的品牌官網",
+        style: "乾淨明亮"
+      }
+    });
+    assert.equal(generated.response.status, 201);
+    assert.equal(generated.data.site.slug, "gemini-brand");
+    assert.equal(generated.data.deployment.version, 1);
+    assert.equal(generated.data.deployment.fileCount, 2);
+
+    const html = await fetch(`${harness.baseUrl}/s/${generated.data.site.slug}/`);
+    assert.equal(html.status, 200);
+    assert.match(await html.text(), /科技顧問/);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("rejects unsafe generated Gemini markup", async () => {
+  const harness = await createHarness({
+    siteGenerator: async () => ({
+      siteName: "Unsafe",
+      summary: "Unsafe generated page",
+      files: {
+        indexHtml: "<!doctype html><html><head><link rel=\"stylesheet\" href=\"assets/style.css\"></head><body><script>alert(1)</script></body></html>",
+        css: "body{color:#123}"
+      }
+    })
+  });
+
+  try {
+    const api = harness.client();
+    const register = await api.request("/api/auth/register", {
+      method: "POST",
+      body: { email: `${crypto.randomUUID()}@example.com`, password: "password123" }
+    });
+    assert.equal(register.response.status, 201);
+
+    const generated = await api.request("/api/sites/generate", {
+      method: "POST",
+      body: {
+        name: "Unsafe Site",
+        brief: "幫我生成一個包含互動效果的網站"
+      }
+    });
+    assert.equal(generated.response.status, 502);
+    assert.match(generated.data.error, /不允許/);
   } finally {
     await harness.close();
   }

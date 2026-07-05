@@ -49,7 +49,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -171,7 +172,7 @@ a {
     height: 2.2rem;
     width: 2.2rem;
     place-items: center;
-    border-radius: 999px;
+    border-radius: 8px;
     background: var(--primary);
     color: #ffffff;
     font-size: 0.84rem;
@@ -212,6 +213,12 @@ a {
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
+  }
+
+  .rail-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
   }
 
   .project-list {
@@ -354,6 +361,12 @@ a {
     box-shadow: 0 0 0 3px rgba(11, 158, 232, 0.12);
   }
 
+  .textarea-field {
+    min-height: 8rem;
+    resize: vertical;
+    line-height: 1.55;
+  }
+
   .btn-primary,
   .btn-secondary,
   .btn-danger,
@@ -420,9 +433,11 @@ a {
   .btn-primary:disabled,
   .btn-secondary:disabled,
   .btn-danger:disabled,
-  .btn-text:disabled {
+  .btn-text:disabled,
+  .btn-disabled {
     cursor: not-allowed;
     opacity: 0.56;
+    pointer-events: none;
   }
 
   .icon-button {
@@ -534,19 +549,25 @@ a {
     padding: 1rem;
   }
 
+  .site-status-heading {
+    color: var(--secondary);
+    font-size: 0.86rem;
+    font-weight: 580;
+  }
+
   .site-status-title {
     margin-top: 0.1rem;
     color: var(--foreground);
     font-family: var(--title-font);
-    font-size: 1.75rem;
-    font-weight: 700;
-    line-height: 1;
+    font-size: 1.1rem;
+    font-weight: 650;
+    line-height: 1.35;
   }
 
   .spono-progress {
     height: 0.45rem;
     overflow: hidden;
-    border-radius: 999px;
+    border-radius: 8px;
     background: #d9e8f3;
   }
 
@@ -563,6 +584,10 @@ a {
     color: var(--secondary);
     font-size: 0.86rem;
     line-height: 1.45;
+  }
+
+  .party-hero-card > .next-step-dialog {
+    margin-top: 0;
   }
 
   .party-stat-grid {
@@ -610,16 +635,42 @@ a {
     min-width: 0;
   }
 
-  .guide-count {
-    display: inline-flex;
-    min-height: 2rem;
+  .next-step-dialog {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.9rem;
+    margin-top: 1rem;
+    border-radius: 8px;
+    border: 1px solid rgba(11, 158, 232, 0.28);
+    background:
+      linear-gradient(180deg, rgba(232, 247, 255, 0.92), rgba(255, 255, 255, 0.98)),
+      #ffffff;
+    padding: 1rem;
+  }
+
+  .next-step-avatar {
+    display: inline-grid;
+    height: 2.75rem;
+    width: 2.75rem;
+    place-items: center;
+    border-radius: 8px;
+    background: var(--primary);
+    color: #ffffff;
+    box-shadow: 0 8px 18px rgba(11, 158, 232, 0.22);
+  }
+
+  .next-step-content {
+    min-width: 0;
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .next-step-actions {
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: center;
-    border-radius: 999px;
-    background: var(--primary-container);
-    padding: 0.25rem 0.75rem;
-    color: var(--primary-strong);
-    font-weight: 700;
+    gap: 0.6rem;
+    padding-top: 0.15rem;
   }
 
   .publish-track {
@@ -658,7 +709,7 @@ a {
     height: 2.25rem;
     width: 2.25rem;
     place-items: center;
-    border-radius: 999px;
+    border-radius: 8px;
     background: var(--primary);
     color: #ffffff;
     font-size: 0.95rem;
@@ -675,11 +726,6 @@ a {
     color: var(--secondary);
   }
 
-  .publish-step-number-small {
-    height: 2rem;
-    width: 2rem;
-  }
-
   .publish-step-heading {
     display: flex;
     flex-wrap: wrap;
@@ -692,25 +738,6 @@ a {
   .publish-step-icon {
     display: inline-flex;
     color: var(--primary-strong);
-  }
-
-  .publish-step-label {
-    border-radius: 999px;
-    background: var(--secondary-container);
-    padding: 0.18rem 0.5rem;
-    color: var(--secondary);
-    font-size: 0.72rem;
-    font-weight: 650;
-  }
-
-  .publish-step-current .publish-step-label {
-    background: var(--primary-container);
-    color: var(--primary-strong);
-  }
-
-  .publish-step-done .publish-step-label {
-    background: var(--success-container);
-    color: var(--success);
   }
 
   .summary-list {
@@ -809,7 +836,6 @@ a {
     gap: 0.7rem;
   }
 
-  .rail-guide-card,
   .drawer-guide,
   .domain-guide {
     border-radius: 8px;
@@ -822,14 +848,16 @@ a {
     overflow-wrap: anywhere;
   }
 
-  .rail-guide-card {
+  .generation-target {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 0.75rem;
-    margin-top: 0.5rem;
+    gap: 0.3rem;
+    border-radius: 8px;
+    border: 1px solid var(--outline-variant);
+    background: var(--surface-container-low);
+    padding: 0.85rem;
+    min-width: 0;
   }
 
-  .rail-guide-card > div,
   .health-row > div,
   .publish-step > div,
   .party-heading > div,
@@ -849,53 +877,57 @@ a {
     line-height: 1.7;
   }
 
-  .site-breadcrumb {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .site-breadcrumb-pill,
-  .party-mini-pill,
-  .status-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: fit-content;
-    min-height: 1.75rem;
-    border-radius: 6px;
-    border: 1px solid var(--outline-variant);
-    background: var(--surface-container-low);
-    padding: 0.3rem 0.65rem;
+  .site-slug {
     color: var(--secondary);
-    font-size: 0.76rem;
-    font-weight: 580;
-    letter-spacing: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.8rem;
+    overflow-wrap: anywhere;
   }
 
-  .party-mini-pill-active {
-    border-color: rgba(11, 158, 232, 0.32);
-    background: var(--primary-container);
-    color: var(--primary-strong);
+  .site-title-stack {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.55rem;
   }
 
-  .status-badge-ok {
-    border-color: var(--success-container);
-    background: var(--success-container);
+  .site-state-text,
+  .row-state {
+    width: fit-content;
+    color: var(--secondary);
+    font-size: 0.86rem;
+    font-weight: 620;
+    line-height: 1.35;
+  }
+
+  .site-state-ok,
+  .row-state-ok {
     color: var(--success);
   }
 
-  .status-badge-failed {
-    border-color: var(--danger-container);
-    background: var(--danger-container);
+  .site-state-warning,
+  .row-state-warning {
+    color: var(--warning);
+  }
+
+  .row-state-danger {
     color: var(--danger);
   }
 
-  .status-badge-pending {
-    border-color: var(--warning-container);
-    background: var(--warning-container);
-    color: var(--warning);
+  .deployment-title-row {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.45rem;
+  }
+
+  .row-version {
+    color: var(--primary-strong);
+    font-family: var(--title-font);
+    font-size: 0.95rem;
+    font-weight: 700;
   }
 
   .code-pill {
@@ -1138,13 +1170,21 @@ a {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
+  .next-step-dialog {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .next-step-avatar {
+    height: 2.45rem;
+    width: 2.45rem;
+  }
+
   .project-rail,
   .workbench,
   .site-hero,
   .guide-panel,
   .quick-summary-panel,
   .party-section-card,
-  .rail-guide-card,
   .site-status-panel {
     width: 100%;
     max-width: 100%;

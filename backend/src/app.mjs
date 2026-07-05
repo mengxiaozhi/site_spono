@@ -7,7 +7,7 @@ import { createDatabase } from "./database.mjs";
 import { createApiRouter, errorHandler } from "./routes.mjs";
 import { createDomainMiddleware, createPreviewMiddleware } from "./static-sites.mjs";
 
-export function createApp({ config = loadConfig(), db = createDatabase(config), dnsResolver = dns.resolveCname } = {}) {
+export function createApp({ config = loadConfig(), db = createDatabase(config), dnsResolver = dns.resolveCname, siteGenerator } = {}) {
   const app = express();
   const corsOrigins = new Set(config.corsOrigins || [config.frontendOrigin]);
 
@@ -25,7 +25,7 @@ export function createApp({ config = loadConfig(), db = createDatabase(config), 
   app.use(express.json({ limit: "1mb" }));
   app.use(cookieParser());
 
-  app.use("/api", createApiRouter({ db, config, dnsResolver }));
+  app.use("/api", createApiRouter({ db, config, dnsResolver, siteGenerator }));
   app.use("/s/:slug", createPreviewMiddleware(db));
   app.use(createDomainMiddleware(db));
 

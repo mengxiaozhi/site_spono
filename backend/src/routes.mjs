@@ -8,6 +8,7 @@ import { executeResult, isDatabaseOperationalError, isDuplicateEntry, nowIso, pu
 import { ensureDemoData } from "./demo.mjs";
 import { extractStaticSiteZip } from "./storage.mjs";
 import { isValidHostname, normalizeHostname, verifyDomainRecord } from "./domains.mjs";
+import { generateSiteWithGemini, writeGeneratedSiteFiles } from "./gemini-site-generator.mjs";
 
 function asyncRoute(handler) {
   return (req, res, next) => {
@@ -79,7 +80,28 @@ function createUpload(config) {
   });
 }
 
-export function createApiRouter({ db, config, dnsResolver }) {
+function normalizeGenerationInput(body, fallbackName = "") {
+  const name = String(body.name || fallbackName || "").trim();
+  const brief = String(body.brief || body.prompt || "").trim();
+
+  if (!name) {
+    throw createHttpError("請輸入網站名稱");
+  }
+  if (brief.length < 10) {
+    throw createHttpError("請描述想生成的網站內容，至少 10 個字");
+  }
+
+  return {
+    name,
+    brief,
+    audience: String(body.audience || "").trim(),
+    style: String(body.style || "").trim(),
+    sections: String(body.sections || "").trim(),
+    contact: String(body.contact || "").trim()
+  };
+}
+
+export function createApiRouter({ db, config, dnsResolver, siteGenerator = generateSiteWithGemini }) {
   const router = express.Router();
   const upload = createUpload(config);
   const requireSession = requireAuth(db, config);
@@ -160,6 +182,80 @@ export function createApiRouter({ db, config, dnsResolver }) {
 
     res.status(201).json({
       site: serializeSite(await queryOne(db, "SELECT * FROM sites WHERE id = ?", [site.id]), config)
+    });
+  }));
+
+  router.post("/sites/generate", requireSession, asyncRoute(async (req, res) => {
+    const requestedSiteId = String(req.body.siteId || "").trim();
+    const existingSite = requestedSiteId ? await getOwnedSite(db, requestedSiteId, req.user.id) : null;
+    const generationInput = normalizeGenerationInput(req.body, existingSite?.name);
+    const generatedSite = await siteGenerator({ config, input: generationInput });
+    const now = nowIso();
+    const site = existingSite || {
+      id: randomUUID(),
+      userId: req.user.id,
+      name: generationInput.name,
+      slug: await createUniqueSlug(db, generationInput.name),
+      createdAt: now,
+      updatedAt: now
+    };
+    const deploymentId = randomUUID();
+    const rootPath = path.join(config.uploadRoot, site.id, deploymentId);
+    let fileStats;
+
+    try {
+      fileStats = await writeGeneratedSiteFiles(generatedSite, rootPath);
+      await withTransaction(db, async (connection) => {
+        if (!existingSite) {
+          await executeResult(connection, `
+            INSERT INTO sites (id, user_id, name, slug, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `, [site.id, site.userId, site.name, site.slug, site.createdAt, site.updatedAt]);
+        }
+
+        const versionRow = await queryOne(
+          connection,
+          "SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM deployments WHERE site_id = ?",
+          [site.id]
+        );
+        await executeResult(
+          connection,
+          `
+            INSERT INTO deployments (id, site_id, version, original_name, root_path, file_count, total_bytes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+          [
+            deploymentId,
+            site.id,
+            versionRow.next_version,
+            "gemini-generated-site",
+            rootPath,
+            fileStats.fileCount,
+            fileStats.totalBytes,
+            now
+          ]
+        );
+        await executeResult(
+          connection,
+          "UPDATE sites SET active_deployment_id = ?, updated_at = ? WHERE id = ?",
+          [deploymentId, now, site.id]
+        );
+      });
+    } catch (error) {
+      await fs.promises.rm(rootPath, { recursive: true, force: true });
+      if (isDuplicateEntry(error)) {
+        throw createHttpError("網站名稱產生的 slug 已被使用，請換一個名稱", 409);
+      }
+      throw error;
+    }
+
+    res.status(201).json({
+      site: serializeSite(await queryOne(db, "SELECT * FROM sites WHERE id = ?", [site.id]), config),
+      deployment: publicDeployment(await queryOne(db, "SELECT * FROM deployments WHERE id = ?", [deploymentId])),
+      generated: {
+        siteName: generatedSite.siteName,
+        summary: generatedSite.summary
+      }
     });
   }));
 
@@ -330,7 +426,7 @@ export function errorHandler(error, _req, res, _next) {
   }
 
   const status = error.status || (isDatabaseOperationalError(error) ? 503 : 500);
-  if (status >= 500) {
+  if (status >= 500 && !error.expose) {
     console.error("[site-spono] API error", {
       code: error?.code,
       errno: error?.errno,
@@ -341,7 +437,9 @@ export function errorHandler(error, _req, res, _next) {
   }
 
   res.status(status).json({
-    error: status >= 500
+    error: error.expose || status < 500
+      ? error.message
+      : status >= 500
       ? (isDatabaseOperationalError(error) ? "資料庫暫時無法使用，請稍後再試" : "伺服器發生錯誤")
       : error.message
   });

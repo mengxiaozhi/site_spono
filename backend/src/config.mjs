@@ -92,6 +92,9 @@ export function loadConfig(overrides = {}) {
     maxUploadBytes: maxUploadMb * 1024 * 1024,
     maxUnzippedBytes: numberFromEnv(overrides.maxUnzippedMb ?? process.env.MAX_UNZIPPED_MB, maxUploadMb * 4) * 1024 * 1024,
     maxZipEntries: numberFromEnv(overrides.maxZipEntries ?? process.env.MAX_ZIP_ENTRIES, 2000),
+    geminiApiKey: overrides.geminiApiKey ?? process.env.GEMINI_API_KEY ?? "",
+    geminiModel: overrides.geminiModel ?? process.env.GEMINI_MODEL ?? "gemini-3.5-flash",
+    geminiEndpoint: normalizeBaseUrl(overrides.geminiEndpoint ?? process.env.GEMINI_ENDPOINT ?? "https://generativelanguage.googleapis.com/v1beta/interactions"),
     demoMode: overrides.demoMode ?? booleanFromEnv(process.env.DEMO_MODE, false),
     isProduction
   };
