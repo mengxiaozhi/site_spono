@@ -35,11 +35,22 @@ PUBLIC_BASE_URL=https://api.spono.tw/site
 NEXT_PUBLIC_API_BASE_URL=https://api.spono.tw/site
 ```
 
-With this setup, frontend requests to `https://api.spono.tw/site/api/...` are proxied to backend routes under `/api/...`, credentialed CORS echoes `https://site.spono.tw`, and preview links use `https://api.spono.tw/site/s/:slug/`.
+With this setup, frontend requests to `https://api.spono.tw/site/api/...` are accepted by the backend even if the reverse proxy preserves the `/site` prefix. Credentialed CORS echoes only configured origins such as `https://site.spono.tw`, and preview links use `https://api.spono.tw/site/s/:slug/`.
+
+Verify production CORS with:
+
+```bash
+curl -i -X OPTIONS https://api.spono.tw/site/api/sites/generate \
+  -H 'Origin: https://site.spono.tw' \
+  -H 'Access-Control-Request-Method: POST' \
+  -H 'Access-Control-Request-Headers: content-type'
+```
+
+The response should include `Access-Control-Allow-Origin: https://site.spono.tw` and `Access-Control-Allow-Credentials: true`.
 
 ## Gemini Site Generation
 
-Set `GEMINI_API_KEY` on the backend to enable the dashboard's AI website generator. `GEMINI_MODEL` defaults to `gemini-3.5-flash`.
+Set `GEMINI_API_KEY` on the backend to enable the dashboard's AI website generator. `GEMINI_MODEL` defaults to `gemini-3.1-flash-lite`, `GEMINI_THINKING_LEVEL` defaults to `minimal`, and `GEMINI_TIMEOUT_MS` defaults to `25000` so provider latency returns an app-level JSON error with CORS before the reverse proxy emits a headerless `502`.
 
 The generator creates a static deployment from two files: `index.html` and `assets/style.css`. Generated output is rejected when it contains script tags, inline event handlers, `javascript:` URLs, forms, iframes, or external CSS/link resources.
 

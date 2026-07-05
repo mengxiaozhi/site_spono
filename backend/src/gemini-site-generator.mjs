@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const DEFAULT_GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions";
+const DEFAULT_GEMINI_TIMEOUT_MS = 25000;
 const MAX_HTML_BYTES = 180 * 1024;
 const MAX_CSS_BYTES = 120 * 1024;
 
@@ -202,28 +203,43 @@ export async function generateSiteWithGemini({ config, input, fetchImpl = fetch 
     throw createGeneratorError("Gemini API key 尚未設定", 503);
   }
 
-  const response = await fetchImpl(config.geminiEndpoint || DEFAULT_GEMINI_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": config.geminiApiKey
-    },
-    body: JSON.stringify({
-      model: config.geminiModel,
-      store: false,
-      system_instruction: "你是 Site Spono 的網站生成器。請生成安全、可部署、靜態、無 JavaScript 的 HTML/CSS 網站。",
-      input: buildPrompt(input),
-      generation_config: {
-        temperature: 0.7,
-        thinking_level: "low"
+  const controller = new AbortController();
+  const timeoutMs = config.geminiTimeoutMs || DEFAULT_GEMINI_TIMEOUT_MS;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response;
+
+  try {
+    response = await fetchImpl(config.geminiEndpoint || DEFAULT_GEMINI_ENDPOINT, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": config.geminiApiKey
       },
-      response_format: {
-        type: "text",
-        mime_type: "application/json",
-        schema: generatedSiteSchema
-      }
-    })
-  });
+      body: JSON.stringify({
+        model: config.geminiModel,
+        store: false,
+        system_instruction: "你是 Site Spono 的網站生成器。請生成安全、可部署、靜態、無 JavaScript 的 HTML/CSS 網站。",
+        input: buildPrompt(input),
+        generation_config: {
+          temperature: 0.7,
+          thinking_level: config.geminiThinkingLevel || "minimal"
+        },
+        response_format: {
+          type: "text",
+          mime_type: "application/json",
+          schema: generatedSiteSchema
+        }
+      })
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw createGeneratorError("Gemini 生成逾時，請縮短需求或稍後再試", 504);
+    }
+    throw createGeneratorError("Gemini API 連線失敗，請稍後再試");
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const payloadText = await response.text();
   const payload = payloadText ? parseJsonText(payloadText) : {};

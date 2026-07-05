@@ -8,6 +8,7 @@ import { once } from "node:events";
 import JSZip from "jszip";
 import { createApp } from "../src/app.mjs";
 import { loadConfig } from "../src/config.mjs";
+import { generateSiteWithGemini } from "../src/gemini-site-generator.mjs";
 import { createSqliteTestDatabase } from "./sqlite-test-database.mjs";
 
 async function createZip(entries, options = {}) {
@@ -217,16 +218,34 @@ test("normalizes proxied public URLs and frontend origins", async () => {
     assert.equal(response.headers.get("access-control-allow-origin"), "https://site.spono.tw");
     assert.equal(response.headers.get("access-control-allow-credentials"), "true");
 
-    const preflight = await fetch(`${harness.baseUrl}/api/auth/me`, {
+    const prefixedResponse = await fetch(`${harness.baseUrl}/site/api/demo/status`, {
+      headers: {
+        Origin: "https://site.spono.tw"
+      }
+    });
+    assert.equal(prefixedResponse.status, 200);
+    assert.equal(prefixedResponse.headers.get("access-control-allow-origin"), "https://site.spono.tw");
+    assert.equal(prefixedResponse.headers.get("access-control-allow-credentials"), "true");
+
+    const preflight = await fetch(`${harness.baseUrl}/site/api/sites/generate`, {
       method: "OPTIONS",
       headers: {
         Origin: "https://admin.spono.tw",
-        "Access-Control-Request-Method": "GET"
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type"
       }
     });
     assert.equal(preflight.status, 204);
     assert.equal(preflight.headers.get("access-control-allow-origin"), "https://admin.spono.tw");
     assert.equal(preflight.headers.get("access-control-allow-credentials"), "true");
+
+    const blocked = await fetch(`${harness.baseUrl}/site/api/demo/status`, {
+      headers: {
+        Origin: "https://evil.example"
+      }
+    });
+    assert.equal(blocked.status, 200);
+    assert.equal(blocked.headers.get("access-control-allow-origin"), null);
   } finally {
     await harness.close();
   }
@@ -346,6 +365,31 @@ test("rejects unsafe generated Gemini markup", async () => {
   } finally {
     await harness.close();
   }
+});
+
+test("times out slow Gemini provider calls before the gateway does", async () => {
+  await assert.rejects(
+    () => generateSiteWithGemini({
+      config: loadConfig({
+        geminiApiKey: "test-key",
+        geminiTimeoutMs: 10
+      }),
+      input: {
+        name: "Slow Gemini",
+        brief: "請生成一個用來測試逾時處理的品牌網站"
+      },
+      fetchImpl: (_url, init) => new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => {
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      })
+    }),
+    (error) => {
+      assert.equal(error.status, 504);
+      assert.match(error.message, /逾時/);
+      return true;
+    }
+  );
 });
 
 test("rejects zips without root index and unsafe paths", async () => {

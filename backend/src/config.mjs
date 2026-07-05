@@ -61,6 +61,19 @@ function normalizeBaseUrl(value) {
   return trimTrailingSlash(value);
 }
 
+function normalizePathPrefix(value) {
+  const cleaned = String(value || "").trim().replace(/^\/+|\/+$/g, "");
+  return cleaned ? `/${cleaned}` : "";
+}
+
+function pathPrefixFromUrl(value) {
+  try {
+    return normalizePathPrefix(new URL(value).pathname);
+  } catch {
+    return "";
+  }
+}
+
 export function loadConfig(overrides = {}) {
   const cwd = overrides.cwd ?? projectRoot;
   const port = numberFromEnv(overrides.port ?? process.env.BACKEND_PORT, 4000);
@@ -69,6 +82,7 @@ export function loadConfig(overrides = {}) {
   const defaultFrontendOrigin = isProduction ? productionFrontendOrigin : "http://localhost:3000";
   const defaultPublicBaseUrl = isProduction ? "https://api.spono.tw/site" : `http://localhost:${port}`;
   const frontendOrigin = normalizeOrigin(overrides.frontendOrigin ?? process.env.FRONTEND_ORIGIN ?? defaultFrontendOrigin);
+  const publicBaseUrl = normalizeBaseUrl(overrides.publicBaseUrl ?? process.env.PUBLIC_BASE_URL ?? defaultPublicBaseUrl);
 
   return {
     cwd,
@@ -79,7 +93,10 @@ export function loadConfig(overrides = {}) {
       productionFrontendOrigin,
       overrides.corsOrigins ?? process.env.CORS_ORIGINS
     ]),
-    publicBaseUrl: normalizeBaseUrl(overrides.publicBaseUrl ?? process.env.PUBLIC_BASE_URL ?? defaultPublicBaseUrl),
+    publicBaseUrl,
+    publicPathPrefix: normalizePathPrefix(
+      overrides.publicPathPrefix ?? process.env.PUBLIC_PATH_PREFIX ?? pathPrefixFromUrl(publicBaseUrl)
+    ),
     jwtSecret: overrides.jwtSecret ?? process.env.JWT_SECRET ?? "change-me",
     dbHost: overrides.dbHost ?? process.env.DB_HOST ?? "127.0.0.1",
     dbPort: numberFromEnv(overrides.dbPort ?? process.env.DB_PORT, 3306),
@@ -93,8 +110,10 @@ export function loadConfig(overrides = {}) {
     maxUnzippedBytes: numberFromEnv(overrides.maxUnzippedMb ?? process.env.MAX_UNZIPPED_MB, maxUploadMb * 4) * 1024 * 1024,
     maxZipEntries: numberFromEnv(overrides.maxZipEntries ?? process.env.MAX_ZIP_ENTRIES, 2000),
     geminiApiKey: overrides.geminiApiKey ?? process.env.GEMINI_API_KEY ?? "",
-    geminiModel: overrides.geminiModel ?? process.env.GEMINI_MODEL ?? "gemini-3.5-flash",
+    geminiModel: overrides.geminiModel ?? process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite",
     geminiEndpoint: normalizeBaseUrl(overrides.geminiEndpoint ?? process.env.GEMINI_ENDPOINT ?? "https://generativelanguage.googleapis.com/v1beta/interactions"),
+    geminiThinkingLevel: overrides.geminiThinkingLevel ?? process.env.GEMINI_THINKING_LEVEL ?? "minimal",
+    geminiTimeoutMs: numberFromEnv(overrides.geminiTimeoutMs ?? process.env.GEMINI_TIMEOUT_MS, 25000),
     demoMode: overrides.demoMode ?? booleanFromEnv(process.env.DEMO_MODE, false),
     isProduction
   };

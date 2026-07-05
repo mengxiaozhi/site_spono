@@ -28,7 +28,7 @@ import {
 import { gsap } from "gsap";
 import type { FormEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiRequest, formatBytes, type Deployment, type Domain, type Site, type User } from "@/lib/api";
+import { ApiError, apiRequest, formatBytes, type Deployment, type Domain, type Site, type User } from "@/lib/api";
 
 type AuthMode = "login" | "register";
 type DashboardTab = "overview" | "deployments" | "domains" | "settings";
@@ -574,6 +574,27 @@ export function Dashboard() {
     (hasVerifiedDomain ? 1 : 0) +
     (hasDeployment && hasVerifiedDomain ? 1 : 0);
 
+  function clearSessionState(nextMessage = "登入狀態已失效，請重新登入") {
+    setUser(null);
+    setSites([]);
+    setActiveSiteId(null);
+    setDeployments([]);
+    setDomains([]);
+    setPanelMode(null);
+    setDomainPendingDelete(null);
+    setUploadFile(null);
+    setIsBusy(false);
+    setMessage(nextMessage);
+  }
+
+  function handleApiError(error: unknown, fallbackMessage: string) {
+    if (error instanceof ApiError && error.status === 401) {
+      clearSessionState();
+      return;
+    }
+    setMessage(error instanceof Error ? error.message : fallbackMessage);
+  }
+
   useEffect(() => {
     if (isBooting || !rootRef.current || prefersReducedMotion()) return;
 
@@ -648,7 +669,7 @@ export function Dashboard() {
         await loadSites();
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "無法連線到後端");
+      handleApiError(error, "無法連線到後端");
     } finally {
       setIsBooting(false);
     }
@@ -748,7 +769,7 @@ export function Dashboard() {
       await loadSites(data.site.id);
       setMessage("網站已建立，下一步請用 Gemini 生成第一版或上傳 ZIP");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "建立網站失敗");
+      handleApiError(error, "建立網站失敗");
     } finally {
       setIsBusy(false);
     }
@@ -789,7 +810,7 @@ export function Dashboard() {
       setActiveTab("overview");
       setMessage(`Gemini 已生成 v${data.deployment.version}，下一步請設定網域：${data.generated.summary}`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Gemini 生成失敗");
+      handleApiError(error, "Gemini 生成失敗");
     } finally {
       setIsBusy(false);
     }
@@ -815,7 +836,7 @@ export function Dashboard() {
       setActiveTab("overview");
       setMessage(`部署 v${data.deployment.version} 已啟用，下一步請設定網域`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "上傳失敗");
+      handleApiError(error, "上傳失敗");
     } finally {
       setIsBusy(false);
     }
@@ -831,7 +852,7 @@ export function Dashboard() {
       await loadDetails(activeSite.id);
       setMessage("部署版本已切換");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "切換版本失敗");
+      handleApiError(error, "切換版本失敗");
     } finally {
       setIsBusy(false);
     }
@@ -853,7 +874,7 @@ export function Dashboard() {
       setActiveTab("overview");
       setMessage("網域已新增，下一步請設定 DNS 後驗證");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "新增網域失敗");
+      handleApiError(error, "新增網域失敗");
     } finally {
       setIsBusy(false);
     }
@@ -875,7 +896,7 @@ export function Dashboard() {
         setMessage(data.domain.lastError || "CNAME 尚未生效，修正 DNS 後再按下一步");
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "驗證失敗");
+      handleApiError(error, "驗證失敗");
     } finally {
       setIsBusy(false);
     }
@@ -891,7 +912,7 @@ export function Dashboard() {
       await loadDetails(activeSite.id);
       setMessage("網域已移除");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "移除網域失敗");
+      handleApiError(error, "移除網域失敗");
     } finally {
       setIsBusy(false);
     }
@@ -911,7 +932,7 @@ export function Dashboard() {
       await loadSites(activeSite.id);
       setMessage("網站名稱已更新");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "更新網站失敗");
+      handleApiError(error, "更新網站失敗");
     } finally {
       setIsBusy(false);
     }
@@ -928,7 +949,7 @@ export function Dashboard() {
       setActiveTab("overview");
       setMessage("網站已刪除");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "刪除網站失敗");
+      handleApiError(error, "刪除網站失敗");
     } finally {
       setIsBusy(false);
     }

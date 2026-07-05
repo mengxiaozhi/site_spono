@@ -49,6 +49,16 @@ type ApiInit = Omit<RequestInit, "body"> & {
   body?: BodyInit | Record<string, unknown>;
 };
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 export async function apiRequest<T>(path: string, init: ApiInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   let body = init.body;
@@ -58,18 +68,28 @@ export async function apiRequest<T>(path: string, init: ApiInit = {}): Promise<T
     body = JSON.stringify(body);
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers,
-    body,
-    credentials: "include"
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers,
+      body,
+      credentials: "include"
+    });
+  } catch {
+    throw new ApiError("無法連線到 API，請重新整理後再試", 0);
+  }
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
+  let data: { error?: string } = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
 
   if (!response.ok) {
-    throw new Error(data.error || "Request failed");
+    throw new ApiError(data.error || "Request failed", response.status);
   }
 
   return data as T;

@@ -104,9 +104,20 @@ export function createPreviewMiddleware(db) {
   };
 }
 
-export function createDomainMiddleware(db) {
+function normalizePathBase(value) {
+  const cleaned = String(value || "").trim().replace(/\/+$/, "");
+  return cleaned || "/";
+}
+
+function pathStartsWithBase(requestPath, basePath) {
+  return requestPath === basePath || requestPath.startsWith(`${basePath}/`);
+}
+
+export function createDomainMiddleware(db, { reservedPathBases = ["/api", "/s"] } = {}) {
+  const reservedBases = reservedPathBases.map(normalizePathBase);
+
   return async (req, res, next) => {
-    if (req.path.startsWith("/api/") || req.path.startsWith("/s/")) {
+    if (reservedBases.some((basePath) => pathStartsWithBase(req.path, basePath))) {
       next();
       return;
     }
