@@ -17,7 +17,6 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  Rocket,
   RotateCcw,
   Settings,
   ShieldCheck,
@@ -33,6 +32,7 @@ import { apiRequest, formatBytes, type Deployment, type Domain, type Site, type 
 type AuthMode = "login" | "register";
 type DashboardTab = "overview" | "deployments" | "domains" | "settings";
 type SecondaryPanel = "create-site" | "upload" | "add-domain" | "rename-site" | "delete-site" | null;
+type PublishStepStatus = "done" | "current" | "todo";
 
 const tabs: Array<{ key: DashboardTab; label: string; icon: ReactNode }> = [
   { key: "overview", label: "總覽", icon: <LayoutDashboard className="h-4 w-4" aria-hidden /> },
@@ -40,6 +40,53 @@ const tabs: Array<{ key: DashboardTab; label: string; icon: ReactNode }> = [
   { key: "domains", label: "網域", icon: <Globe2 className="h-4 w-4" aria-hidden /> },
   { key: "settings", label: "設定", icon: <Settings className="h-4 w-4" aria-hidden /> }
 ];
+
+function BrandLockup({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className={`brand-lockup ${compact ? "brand-lockup-compact" : ""}`}>
+      <img className="brand-logo" src="/spono-logo.jpg" alt="Spono" />
+      {!compact && (
+        <div className="brand-copy">
+          <span className="brand-title">網站控制台</span>
+          <span className="brand-subtitle">照著做就能發布</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PublishStep({
+  action,
+  copy,
+  icon,
+  step,
+  status,
+  title
+}: {
+  action?: ReactNode;
+  copy: string;
+  icon: ReactNode;
+  step: number;
+  status: PublishStepStatus;
+  title: string;
+}) {
+  const label = status === "done" ? "已完成" : status === "current" ? "現在做" : "等等做";
+
+  return (
+    <div className={`publish-step publish-step-${status}`}>
+      <span className="publish-step-number">{status === "done" ? <CheckCircle2 className="h-4 w-4" aria-hidden /> : step}</span>
+      <div className="min-w-0">
+        <div className="publish-step-heading">
+          <span className="publish-step-icon">{icon}</span>
+          <span>{title}</span>
+          <span className="publish-step-label">{label}</span>
+        </div>
+        <p className="party-section-copy text-sm">{copy}</p>
+        {action && <div className="mt-3">{action}</div>}
+      </div>
+    </div>
+  );
+}
 
 function prefersReducedMotion() {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -249,7 +296,7 @@ function Drawer({
       <aside className="drawer-panel" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}>
         <div className="drawer-header">
           <div data-animate="panel-item">
-            <p className="party-kicker">Action</p>
+            <p className="party-kicker">引導流程</p>
             <h2 id={`${id}-title`} className="party-section-title">{title}</h2>
             <p className="party-section-copy mt-1 text-sm">{description}</p>
           </div>
@@ -329,7 +376,7 @@ function ConfirmDialog({
           <div className="party-heading">
             <span className="party-heading-icon">{icon ?? <AlertCircle className="h-5 w-5" aria-hidden />}</span>
             <div>
-              <p className="party-kicker">Confirm</p>
+              <p className="party-kicker">確認操作</p>
               <h2 id="confirm-dialog-title" className="party-section-title">{title}</h2>
             </div>
           </div>
@@ -417,6 +464,9 @@ export function Dashboard() {
     [activeSite?.activeDeploymentId, deployments]
   );
   const verifiedDomains = domains.filter((domain) => domain.status === "verified").length;
+  const hasDeployment = Boolean(activeDeployment);
+  const hasVerifiedDomain = verifiedDomains > 0;
+  const publishProgress = !hasDeployment ? 1 : hasVerifiedDomain ? 3 : 2;
 
   useEffect(() => {
     if (isBooting || !rootRef.current || prefersReducedMotion()) return;
@@ -731,7 +781,7 @@ export function Dashboard() {
     return (
       <main className="app-shell grid min-h-screen place-items-center px-4 text-slate-700">
         <div className="party-note-card flex items-center gap-3">
-          <Loader2 className="h-5 w-5 animate-spin text-[#0b57d0]" aria-hidden />
+          <Loader2 className="h-5 w-5 animate-spin text-[#0b9ee8]" aria-hidden />
           <span>載入控制台...</span>
         </div>
       </main>
@@ -744,36 +794,35 @@ export function Dashboard() {
         <section className="party-auth-grid mx-auto w-full max-w-6xl" data-animate="intro">
           <aside className="party-auth-aside" data-animate="intro">
             <div className="space-y-7">
-              <div className="brand-lockup">
-                <span className="brand-mark">
-                  <Rocket className="h-5 w-5" aria-hidden />
-                </span>
-                <div className="brand-copy">
-                  <span className="brand-title">Site Spono</span>
-                  <span className="brand-subtitle">Static Site Delivery</span>
-                </div>
-              </div>
+              <BrandLockup />
 
               <div>
-                <p className="party-kicker">Control Console</p>
-                <h1 className="party-hero-title">發布靜態網站的工作台</h1>
-                <p className="party-hero-lead mt-4">登入後上傳 zip、切換部署版本、驗證 CNAME，所有高風險操作會在獨立面板中完成。</p>
+                <p className="party-kicker">Spono 入門</p>
+                <h1 className="party-hero-title">不用懂伺服器，也能照著發布網站</h1>
+                <p className="party-hero-lead mt-4">登入後照著三個步驟做：上傳 ZIP、綁定網域、打開預覽。每個動作都會在右側面板帶你完成。</p>
               </div>
             </div>
 
-            <div className="grid gap-3">
+            <div className="auth-guide-list">
               <div className="health-row">
-                <Upload className="mt-0.5 h-5 w-5 text-[#0b57d0]" aria-hidden />
+                <Upload className="mt-0.5 h-5 w-5 text-[#0b9ee8]" aria-hidden />
                 <div>
-                  <p className="party-list-title">版本化部署</p>
-                  <p className="party-section-copy text-sm">每次上傳都是獨立版本，可回滾到指定 deployment。</p>
+                  <p className="party-list-title">1. 上傳網站 ZIP</p>
+                  <p className="party-section-copy text-sm">把網站打包成 ZIP，Spono 會替你建立第一個版本。</p>
                 </div>
               </div>
               <div className="health-row">
-                <Globe2 className="mt-0.5 h-5 w-5 text-[#0b57d0]" aria-hidden />
+                <Globe2 className="mt-0.5 h-5 w-5 text-[#0b9ee8]" aria-hidden />
                 <div>
-                  <p className="party-list-title">CNAME 驗證</p>
-                  <p className="party-section-copy text-sm">網域設定使用二級流程，避免和日常檢視混在一起。</p>
+                  <p className="party-list-title">2. 綁定網域</p>
+                  <p className="party-section-copy text-sm">照著畫面提供的 CNAME target 設定，再按驗證。</p>
+                </div>
+              </div>
+              <div className="health-row">
+                <ExternalLink className="mt-0.5 h-5 w-5 text-[#0b9ee8]" aria-hidden />
+                <div>
+                  <p className="party-list-title">3. 開啟預覽</p>
+                  <p className="party-section-copy text-sm">確認畫面沒問題，就能分享連結或切換版本。</p>
                 </div>
               </div>
             </div>
@@ -785,7 +834,7 @@ export function Dashboard() {
                 <ShieldCheck className="h-5 w-5" aria-hidden />
               </span>
               <div>
-                <p className="party-kicker">Site Spono</p>
+                <p className="party-kicker">Spono</p>
                 <h2 className="party-section-title">登入控制台</h2>
               </div>
             </div>
@@ -832,15 +881,7 @@ export function Dashboard() {
     <main ref={rootRef} className="app-shell pb-8">
       <header className="top-chrome" data-animate="intro">
         <div className="top-chrome-inner min-h-[72px] px-4 lg:px-8">
-          <div className="brand-lockup">
-            <span className="brand-mark">
-              <Rocket className="h-5 w-5" aria-hidden />
-            </span>
-            <div className="brand-copy">
-              <span className="brand-title">Site Spono</span>
-              <span className="brand-subtitle">靜態網站發布控制台</span>
-            </div>
-          </div>
+          <BrandLockup />
           <nav className="desktop-nav hidden lg:flex" aria-label="主要導覽">
             {tabs.map((tab) => (
               <button
@@ -854,7 +895,8 @@ export function Dashboard() {
               </button>
             ))}
           </nav>
-          <div className="flex items-center gap-2">
+          <div className="top-actions">
+            <span className="user-chip">{user.email.charAt(0).toUpperCase()}</span>
             <IconButton label="重新整理" onClick={() => void bootstrap()} disabled={isBusy}>
               <RefreshCw className="h-4 w-4" aria-hidden />
             </IconButton>
@@ -873,7 +915,7 @@ export function Dashboard() {
                 <FolderKanban className="h-5 w-5" aria-hidden />
               </span>
               <div>
-                <p className="party-kicker">Projects</p>
+                <p className="party-kicker">我的專案</p>
                 <h2 className="party-section-title">網站</h2>
               </div>
             </div>
@@ -902,6 +944,16 @@ export function Dashboard() {
               </button>
             ))}
           </div>
+
+          <div className="rail-guide-card">
+            <span className="party-heading-icon">
+              <ShieldCheck className="h-5 w-5" aria-hidden />
+            </span>
+            <div>
+              <p className="party-list-title">照著做就能發布</p>
+              <p className="party-section-copy text-sm">選網站後看「下一步」，Spono 會告訴你現在該按哪裡。</p>
+            </div>
+          </div>
         </aside>
 
         <section className="workbench" data-animate="intro">
@@ -915,9 +967,9 @@ export function Dashboard() {
           {!activeSite ? (
             <section className="party-hero-card" data-animate="tab-panel">
               <div className="space-y-4">
-                <p className="party-kicker">Ready</p>
-                <h1 className="party-hero-title">建立第一個靜態網站</h1>
-                <p className="party-hero-lead">主畫面保留檢視狀態，建立與部署等動作會在抽屜流程中完成。</p>
+                <p className="party-kicker">第一步</p>
+                <h1 className="party-hero-title">先建立一個網站專案</h1>
+                <p className="party-hero-lead">有了專案後，Spono 會依序帶你上傳 ZIP、綁定網域、開啟預覽。</p>
                 <PrimaryButton onClick={() => setPanelMode("create-site")} disabled={isBusy}>
                   <Plus className="h-4 w-4" aria-hidden />
                   建立網站
@@ -926,16 +978,28 @@ export function Dashboard() {
             </section>
           ) : (
             <>
-              <section className="party-hero-card split" data-animate="intro">
-                <div className="space-y-4">
+              <section className="site-hero" data-animate="intro">
+                <div className="site-hero-main">
                   <div className="site-breadcrumb">
-                    <span className="site-breadcrumb-pill">Project</span>
+                    <span className="site-breadcrumb-pill">目前專案</span>
                     <span className="font-mono text-xs text-slate-500">/{activeSite.slug}</span>
                   </div>
-                  <div>
-                    <p className="party-kicker">Production</p>
-                    <h1 className="party-hero-title">{activeSite.name}</h1>
-                    <p className="party-hero-lead">目前 active deployment：{activeDeployment ? `v${activeDeployment.version}` : "尚未部署"}</p>
+                  <div className="site-title-row">
+                    <span className="site-icon">
+                      <MonitorPlay className="h-7 w-7" aria-hidden />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h1 className="party-hero-title truncate">{activeSite.name}</h1>
+                        <span className={`status-badge ${activeDeployment ? "status-badge-ok" : "status-badge-pending"}`}>
+                          {activeDeployment ? "已上線" : "待上傳"}
+                        </span>
+                      </div>
+                      <a href={activeSite.previewUrl} target="_blank" rel="noreferrer" className="site-preview-link">
+                        {activeSite.previewUrl}
+                        <ExternalLink className="h-4 w-4" aria-hidden />
+                      </a>
+                    </div>
                   </div>
                   <div className="row-actions justify-start">
                     <a href={activeSite.previewUrl} target="_blank" rel="noreferrer" className="btn-primary">
@@ -953,15 +1017,22 @@ export function Dashboard() {
                   </div>
                 </div>
 
-                <div className="party-soft-card">
-                  <p className="party-kicker">CNAME Target</p>
-                  <div className="code-pill mt-2">
-                    <code className="truncate font-mono text-sm text-slate-700">{cnameTarget}</code>
-                    <IconButton label="複製 CNAME target" onClick={() => void copyText(cnameTarget, "CNAME target 已複製")}>
-                      <Copy className="h-4 w-4" aria-hidden />
-                    </IconButton>
+                <div className="site-status-panel">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="party-kicker">上線進度</p>
+                      <p className="site-status-title">{publishProgress} / 3</p>
+                    </div>
+                    <span className="publish-step-number publish-step-number-small">{publishProgress}</span>
                   </div>
-                  <p className="party-section-copy mt-3 text-sm">新增自訂網域後，將 CNAME 指向此 target，再執行驗證。</p>
+                  <div className="spono-progress" aria-label={`上線進度 ${publishProgress} / 3`}>
+                    <span style={{ width: `${(publishProgress / 3) * 100}%` }} />
+                  </div>
+                  <div className="site-status-list">
+                    <span>{activeDeployment ? `正在使用 v${activeDeployment.version}` : "還沒有版本"}</span>
+                    <span>{hasVerifiedDomain ? `${verifiedDomains} 個網域已驗證` : "網域還沒完成"}</span>
+                    <span>{activeDeployment ? "可以開啟預覽" : "上傳後才可預覽"}</span>
+                  </div>
                 </div>
               </section>
 
@@ -980,51 +1051,99 @@ export function Dashboard() {
               </div>
 
               {activeTab === "overview" && (
-                <section className="grid gap-4" data-animate="tab-panel">
-                  <div className="party-stat-grid">
-                    <StatBox icon={<Activity className="h-5 w-5" aria-hidden />} label="部署版本" value={`${deployments.length}`} helper={activeDeployment ? `最新啟用 v${activeDeployment.version}` : "尚未建立部署"} />
-                    <StatBox icon={<Globe2 className="h-5 w-5" aria-hidden />} label="已驗證網域" value={`${verifiedDomains}`} helper={`${domains.length} 個網域設定`} />
-                    <StatBox icon={<Clock3 className="h-5 w-5" aria-hidden />} label="更新時間" value={shortDate(activeSite.updatedAt)} helper="專案最後一次更新" />
-                  </div>
-
-                  <section className="party-section-card">
+                <section className="overview-grid" data-animate="tab-panel">
+                  <section className="guide-panel">
                     <div className="workbench-heading">
-                      <div className="party-heading">
-                        <span className="party-heading-icon"><ShieldCheck className="h-5 w-5" aria-hidden /></span>
-                        <div>
-                          <p className="party-kicker">Project Health</p>
-                          <h2 className="party-section-title">發布檢查</h2>
-                        </div>
+                      <div>
+                        <p className="party-kicker">下一步</p>
+                        <h2 className="party-section-title">照著做就能發布</h2>
+                        <p className="party-section-copy mt-2 text-sm">Spono 會依照目前狀態，把該做的事排在前面。</p>
                       </div>
-                      <SecondaryButton onClick={() => setActiveTab("deployments")}>
-                        <Upload className="h-4 w-4" aria-hidden />
-                        管理部署
-                      </SecondaryButton>
+                      <span className="guide-count">{publishProgress}/3</span>
                     </div>
-                    <div className="health-list">
-                      <div className="health-row">
-                        <CheckCircle2 className={`mt-0.5 h-5 w-5 ${activeDeployment ? "text-emerald-700" : "text-slate-400"}`} aria-hidden />
-                        <div>
-                          <p className="party-list-title">Active deployment</p>
-                          <p className="party-section-copy text-sm">{activeDeployment ? "已設定，可對外預覽。" : "尚未上傳 zip。"}</p>
-                        </div>
-                      </div>
-                      <div className="health-row">
-                        <CheckCircle2 className={`mt-0.5 h-5 w-5 ${verifiedDomains ? "text-emerald-700" : "text-slate-400"}`} aria-hidden />
-                        <div>
-                          <p className="party-list-title">Custom domain</p>
-                          <p className="party-section-copy text-sm">{verifiedDomains ? "已有通過驗證的 CNAME。" : "尚無已驗證網域。"}</p>
-                        </div>
-                      </div>
-                      <div className="health-row">
-                        <CheckCircle2 className={`mt-0.5 h-5 w-5 ${deployments.length > 1 ? "text-emerald-700" : "text-slate-400"}`} aria-hidden />
-                        <div>
-                          <p className="party-list-title">Rollback</p>
-                          <p className="party-section-copy text-sm">{deployments.length > 1 ? "可切換到舊版本。" : "累積多個版本後可回滾。"}</p>
-                        </div>
-                      </div>
+
+                    <div className="publish-track">
+                      <PublishStep
+                        step={1}
+                        status={hasDeployment ? "done" : "current"}
+                        icon={<Upload className="h-4 w-4" aria-hidden />}
+                        title="上傳網站 ZIP"
+                        copy={hasDeployment ? `目前使用 v${activeDeployment?.version}，可以隨時上傳新版。` : "選一個包含 index.html 的 ZIP 檔，上傳後就會建立第一個版本。"}
+                        action={hasDeployment ? (
+                          <SecondaryButton onClick={() => setActiveTab("deployments")}>
+                            <Upload className="h-4 w-4" aria-hidden />
+                            查看部署
+                          </SecondaryButton>
+                        ) : (
+                          <PrimaryButton onClick={() => setPanelMode("upload")} disabled={isBusy}>
+                            <Upload className="h-4 w-4" aria-hidden />
+                            前往上傳
+                          </PrimaryButton>
+                        )}
+                      />
+                      <PublishStep
+                        step={2}
+                        status={!hasDeployment ? "todo" : hasVerifiedDomain ? "done" : "current"}
+                        icon={<Globe2 className="h-4 w-4" aria-hidden />}
+                        title="綁定網域"
+                        copy={hasVerifiedDomain ? `${verifiedDomains} 個網域已可使用。` : "把自己的網域加進來，再依照 CNAME target 設定 DNS。"}
+                        action={!hasDeployment ? undefined : hasVerifiedDomain ? (
+                          <SecondaryButton onClick={() => setActiveTab("domains")}>
+                            <Globe2 className="h-4 w-4" aria-hidden />
+                            查看網域
+                          </SecondaryButton>
+                        ) : (
+                          <PrimaryButton
+                            onClick={() => {
+                              setActiveTab("domains");
+                              setPanelMode("add-domain");
+                            }}
+                            disabled={isBusy}
+                          >
+                            <Plus className="h-4 w-4" aria-hidden />
+                            新增網域
+                          </PrimaryButton>
+                        )}
+                      />
+                      <PublishStep
+                        step={3}
+                        status={!hasDeployment ? "todo" : hasVerifiedDomain ? "current" : "todo"}
+                        icon={<ExternalLink className="h-4 w-4" aria-hidden />}
+                        title="開啟預覽"
+                        copy={!hasDeployment ? "先完成上傳，這裡就會出現可開啟的預覽。" : hasVerifiedDomain ? "打開預覽檢查畫面；沒問題就能分享連結。" : "先把網域綁好，最後再確認公開畫面。"}
+                        action={hasDeployment && hasVerifiedDomain ? (
+                          <a href={activeSite.previewUrl} target="_blank" rel="noreferrer" className="btn-primary">
+                            <ExternalLink className="h-4 w-4" aria-hidden />
+                            開啟預覽
+                          </a>
+                        ) : undefined}
+                      />
                     </div>
                   </section>
+
+                  <aside className="quick-summary-panel">
+                    <div>
+                      <p className="party-kicker">狀態摘要</p>
+                      <h2 className="party-section-title">這個網站現在如何？</h2>
+                    </div>
+
+                    <div className="summary-list">
+                      <StatBox icon={<Activity className="h-5 w-5" aria-hidden />} label="部署版本" value={`${deployments.length}`} helper={activeDeployment ? `現在對外顯示 v${activeDeployment.version}` : "還沒上傳任何版本"} />
+                      <StatBox icon={<Globe2 className="h-5 w-5" aria-hidden />} label="已驗證網域" value={`${verifiedDomains}`} helper={`${domains.length} 個網域設定`} />
+                      <StatBox icon={<Clock3 className="h-5 w-5" aria-hidden />} label="最後更新" value={shortDate(activeSite.updatedAt)} helper="專案最近一次變更" />
+                    </div>
+
+                    <div className="cname-helper">
+                      <p className="party-list-title">CNAME target</p>
+                      <p className="party-section-copy text-sm">DNS 後台只需要把 CNAME 指向這串文字。</p>
+                      <div className="code-pill mt-3">
+                        <code className="truncate font-mono text-sm text-slate-700">{cnameTarget}</code>
+                        <IconButton label="複製 CNAME target" onClick={() => void copyText(cnameTarget, "CNAME target 已複製")}>
+                          <Copy className="h-4 w-4" aria-hidden />
+                        </IconButton>
+                      </div>
+                    </div>
+                  </aside>
                 </section>
               )}
 
@@ -1034,8 +1153,9 @@ export function Dashboard() {
                     <div className="party-heading">
                       <span className="party-heading-icon"><Upload className="h-5 w-5" aria-hidden /></span>
                       <div>
-                        <p className="party-kicker">Deployments</p>
-                        <h2 className="party-section-title">版本列表</h2>
+                        <p className="party-kicker">部署紀錄</p>
+                        <h2 className="party-section-title">每次上傳都會留一版</h2>
+                        <p className="party-section-copy mt-1 text-sm">上傳錯了也不用怕，可以回到之前的版本。</p>
                       </div>
                     </div>
                     <PrimaryButton onClick={() => setPanelMode("upload")} disabled={isBusy}>
@@ -1052,10 +1172,10 @@ export function Dashboard() {
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="party-mini-pill">v{deployment.version}</span>
-                            {deployment.id === activeSite.activeDeploymentId && <span className="party-mini-pill party-mini-pill-active">Production</span>}
+                            {deployment.id === activeSite.activeDeploymentId && <span className="party-mini-pill party-mini-pill-active">目前上線</span>}
                           </div>
                           <p className="party-list-title mt-2 truncate">{deployment.originalName}</p>
-                          <p className="party-section-copy text-sm">{deployment.fileCount} files · {formatBytes(deployment.totalBytes)} · {dateTime(deployment.createdAt)}</p>
+                          <p className="party-section-copy text-sm">{deployment.fileCount} 個檔案 · {formatBytes(deployment.totalBytes)} · {dateTime(deployment.createdAt)}</p>
                         </div>
                         {deployment.id === activeSite.activeDeploymentId ? (
                           <span className="status-badge status-badge-ok">使用中</span>
@@ -1077,8 +1197,9 @@ export function Dashboard() {
                     <div className="party-heading">
                       <span className="party-heading-icon"><Globe2 className="h-5 w-5" aria-hidden /></span>
                       <div>
-                        <p className="party-kicker">Domains</p>
-                        <h2 className="party-section-title">CNAME 與網域驗證</h2>
+                        <p className="party-kicker">網域設定</p>
+                        <h2 className="party-section-title">把自己的網址接上來</h2>
+                        <p className="party-section-copy mt-1 text-sm">新增網域後，照著下方 target 去 DNS 後台設定 CNAME。</p>
                       </div>
                     </div>
                     <PrimaryButton onClick={() => setPanelMode("add-domain")} disabled={isBusy}>
@@ -1094,6 +1215,15 @@ export function Dashboard() {
                     </IconButton>
                   </div>
 
+                  <div className="domain-guide">
+                    <p className="party-list-title">照這三步做</p>
+                    <ol>
+                      <li>在 DNS 後台新增一筆 CNAME。</li>
+                      <li>把值指向上面的 target。</li>
+                      <li>回到這裡按「驗證」。</li>
+                    </ol>
+                  </div>
+
                   <div className="mt-5 grid gap-3">
                     {domains.length === 0 ? (
                       <EmptyState title="尚無自訂網域" copy={`新增網域後，將 CNAME 指向 ${cnameTarget}，再執行驗證。`} />
@@ -1101,7 +1231,7 @@ export function Dashboard() {
                       <div key={domain.id} className="domain-row">
                         <div className="min-w-0">
                           <p className="party-list-title truncate">{domain.hostname}</p>
-                          <p className="party-section-copy text-sm">Target: {domain.cnameTarget} · Last checked: {shortDate(domain.lastCheckedAt)}</p>
+                          <p className="party-section-copy text-sm">Target: {domain.cnameTarget} · 上次檢查：{shortDate(domain.lastCheckedAt)}</p>
                           {domain.lastError && <p className="mt-1 text-sm text-[#b3261e]">{domain.lastError}</p>}
                         </div>
                         <StatusBadge status={domain.status} />
@@ -1127,8 +1257,9 @@ export function Dashboard() {
                       <div className="party-heading">
                         <span className="party-heading-icon"><Settings className="h-5 w-5" aria-hidden /></span>
                         <div>
-                          <p className="party-kicker">Settings</p>
-                          <h2 className="party-section-title">專案設定</h2>
+                          <p className="party-kicker">專案設定</p>
+                          <h2 className="party-section-title">名稱與危險操作</h2>
+                          <p className="party-section-copy mt-1 text-sm">一般只需要重新命名；刪除會再跳確認視窗。</p>
                         </div>
                       </div>
                     </div>
@@ -1178,6 +1309,10 @@ export function Dashboard() {
         onClose={closePanel}
       >
         <form className="party-form-grid" onSubmit={handleCreateSite}>
+          <div className="drawer-guide">
+            <p className="party-list-title">先取一個好認的名字</p>
+            <p className="party-section-copy text-sm">例如公司官網、活動頁、作品集。之後可以再改名。</p>
+          </div>
           <TextInput id="site-name" label="網站名稱" value={siteName} onChange={setSiteName} placeholder="marketing-site" required />
           <PrimaryButton type="submit" disabled={isBusy}>
             {isBusy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
@@ -1196,6 +1331,10 @@ export function Dashboard() {
         onClose={closePanel}
       >
         <form className="party-form-grid" onSubmit={handleUpload}>
+          <div className="drawer-guide">
+            <p className="party-list-title">ZIP 裡面要有 index.html</p>
+            <p className="party-section-copy text-sm">如果網站檔案放在資料夾裡，請先進到資料夾內再打包，避免多包一層路徑。</p>
+          </div>
           <label className="grid gap-2" htmlFor="deployment-zip">
             <span className="field-label">部署 zip</span>
             <input
@@ -1204,7 +1343,7 @@ export function Dashboard() {
               type="file"
               accept=".zip,application/zip"
               onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
-              className="input-field file:mr-3 file:rounded file:border-0 file:bg-[#0b57d0] file:px-3 file:py-1 file:text-white"
+              className="input-field file:mr-3 file:rounded file:border-0 file:bg-[#0b9ee8] file:px-3 file:py-1 file:text-white"
             />
           </label>
           <PrimaryButton type="submit" disabled={isBusy || !uploadFile}>
@@ -1224,6 +1363,10 @@ export function Dashboard() {
         onClose={closePanel}
       >
         <form className="party-form-grid" onSubmit={handleAddDomain}>
+          <div className="drawer-guide">
+            <p className="party-list-title">先填你的公開網址</p>
+            <p className="party-section-copy text-sm">新增後去 DNS 後台把 CNAME 指向這個 target：{cnameTarget}</p>
+          </div>
           <TextInput id="domain-name" label="自訂網域" value={domainName} onChange={setDomainName} placeholder="www.example.com" required />
           <PrimaryButton type="submit" disabled={isBusy || !domainName}>
             {isBusy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}

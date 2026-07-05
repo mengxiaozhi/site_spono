@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import mime from "mime-types";
+import { queryOne } from "./database.mjs";
 
 export function hostWithoutPort(host) {
   const value = String(host || "").split(",")[0].trim().toLowerCase();
@@ -82,20 +83,24 @@ export async function serveStaticSite(req, res, rootPath, requestPath) {
 }
 
 export function createPreviewMiddleware(db) {
-  return async (req, res) => {
-    const site = db.prepare("SELECT * FROM sites WHERE slug = ?").get(req.params.slug);
-    if (!site?.active_deployment_id) {
-      res.status(404).send("Site not published");
-      return;
-    }
+  return async (req, res, next) => {
+    try {
+      const site = await queryOne(db, "SELECT * FROM sites WHERE slug = ?", [req.params.slug]);
+      if (!site?.active_deployment_id) {
+        res.status(404).send("Site not published");
+        return;
+      }
 
-    const deployment = db.prepare("SELECT * FROM deployments WHERE id = ?").get(site.active_deployment_id);
-    if (!deployment) {
-      res.status(404).send("Deployment not found");
-      return;
-    }
+      const deployment = await queryOne(db, "SELECT * FROM deployments WHERE id = ?", [site.active_deployment_id]);
+      if (!deployment) {
+        res.status(404).send("Deployment not found");
+        return;
+      }
 
-    await serveStaticSite(req, res, deployment.root_path, req.path || "/");
+      await serveStaticSite(req, res, deployment.root_path, req.path || "/");
+    } catch (error) {
+      next(error);
+    }
   };
 }
 
@@ -112,13 +117,19 @@ export function createDomainMiddleware(db) {
       return;
     }
 
-    const row = db.prepare(`
-      SELECT deployments.root_path
-      FROM domains
-      INNER JOIN sites ON sites.id = domains.site_id
-      INNER JOIN deployments ON deployments.id = sites.active_deployment_id
-      WHERE domains.hostname = ? AND domains.status = 'verified'
-    `).get(hostname);
+    let row;
+    try {
+      row = await queryOne(db, `
+        SELECT deployments.root_path
+        FROM domains
+        INNER JOIN sites ON sites.id = domains.site_id
+        INNER JOIN deployments ON deployments.id = sites.active_deployment_id
+        WHERE domains.hostname = ? AND domains.status = 'verified'
+      `, [hostname]);
+    } catch (error) {
+      next(error);
+      return;
+    }
 
     if (!row) {
       next();

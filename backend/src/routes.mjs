@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { authenticateUser, clearSessionCookie, createUser, getSessionUser, requireAuth, setSessionCookie, signSession } from "./auth.mjs";
-import { nowIso, publicDeployment, publicDomain, publicSite } from "./database.mjs";
+import { executeResult, isDatabaseOperationalError, isDuplicateEntry, nowIso, publicDeployment, publicDomain, publicSite, queryOne, queryRows, withTransaction } from "./database.mjs";
 import { ensureDemoData } from "./demo.mjs";
 import { extractStaticSiteZip } from "./storage.mjs";
 import { isValidHostname, normalizeHostname, verifyDomainRecord } from "./domains.mjs";
@@ -32,19 +32,19 @@ function slugify(value) {
   return slug || "site";
 }
 
-function createUniqueSlug(db, requested) {
+async function createUniqueSlug(db, requested) {
   const base = slugify(requested);
   let candidate = base;
   let suffix = 2;
-  while (db.prepare("SELECT id FROM sites WHERE slug = ?").get(candidate)) {
+  while (await queryOne(db, "SELECT id FROM sites WHERE slug = ?", [candidate])) {
     candidate = `${base}-${suffix}`;
     suffix += 1;
   }
   return candidate;
 }
 
-function getOwnedSite(db, siteId, userId) {
-  const site = db.prepare("SELECT * FROM sites WHERE id = ? AND user_id = ?").get(siteId, userId);
+async function getOwnedSite(db, siteId, userId) {
+  const site = await queryOne(db, "SELECT * FROM sites WHERE id = ? AND user_id = ?", [siteId, userId]);
   if (!site) {
     throw createHttpError("找不到網站", 404);
   }
@@ -52,7 +52,7 @@ function getOwnedSite(db, siteId, userId) {
 }
 
 function previewUrl(config, slug) {
-  return `http://localhost:${config.port}/s/${slug}/`;
+  return `${config.publicBaseUrl}/s/${slug}/`;
 }
 
 function serializeSite(row, config) {
@@ -88,6 +88,11 @@ export function createApiRouter({ db, config, dnsResolver }) {
     res.json({ enabled: config.demoMode });
   });
 
+  router.get("/health", asyncRoute(async (_req, res) => {
+    await queryOne(db, "SELECT 1 AS ok");
+    res.json({ ok: true, database: "ok" });
+  }));
+
   router.post("/demo/login", asyncRoute(async (_req, res) => {
     if (!config.demoMode) {
       throw createHttpError("Demo mode is disabled", 404);
@@ -99,14 +104,14 @@ export function createApiRouter({ db, config, dnsResolver }) {
   }));
 
   router.post("/auth/register", asyncRoute(async (req, res) => {
-    const user = createUser(db, req.body.email, req.body.password);
+    const user = await createUser(db, req.body.email, req.body.password);
     const token = signSession(user, config);
     setSessionCookie(res, token, config);
     res.status(201).json({ user });
   }));
 
   router.post("/auth/login", asyncRoute(async (req, res) => {
-    const user = authenticateUser(db, req.body.email, req.body.password);
+    const user = await authenticateUser(db, req.body.email, req.body.password);
     const token = signSession(user, config);
     setSessionCookie(res, token, config);
     res.json({ user });
@@ -117,20 +122,20 @@ export function createApiRouter({ db, config, dnsResolver }) {
     res.json({ ok: true });
   });
 
-  router.get("/auth/me", (req, res) => {
-    res.json({ user: getSessionUser(req, db, config) });
-  });
+  router.get("/auth/me", asyncRoute(async (req, res) => {
+    res.json({ user: await getSessionUser(req, db, config) });
+  }));
 
-  router.get("/sites", requireSession, (req, res) => {
-    const sites = db.prepare(`
+  router.get("/sites", requireSession, asyncRoute(async (req, res) => {
+    const sites = await queryRows(db, `
       SELECT *
       FROM sites
       WHERE user_id = ?
       ORDER BY updated_at DESC
-    `).all(req.user.id).map((site) => serializeSite(site, config));
+    `, [req.user.id]);
 
-    res.json({ sites });
-  });
+    res.json({ sites: sites.map((site) => serializeSite(site, config)) });
+  }));
 
   router.post("/sites", requireSession, asyncRoute(async (req, res) => {
     const name = String(req.body.name || "").trim();
@@ -143,125 +148,136 @@ export function createApiRouter({ db, config, dnsResolver }) {
       id: randomUUID(),
       userId: req.user.id,
       name,
-      slug: createUniqueSlug(db, req.body.slug || name),
+      slug: await createUniqueSlug(db, req.body.slug || name),
       createdAt: now,
       updatedAt: now
     };
 
-    db.prepare(`
+    await executeResult(db, `
       INSERT INTO sites (id, user_id, name, slug, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).run(site.id, site.userId, site.name, site.slug, site.createdAt, site.updatedAt);
+    `, [site.id, site.userId, site.name, site.slug, site.createdAt, site.updatedAt]);
 
     res.status(201).json({
-      site: serializeSite(db.prepare("SELECT * FROM sites WHERE id = ?").get(site.id), config)
+      site: serializeSite(await queryOne(db, "SELECT * FROM sites WHERE id = ?", [site.id]), config)
     });
   }));
 
-  router.get("/sites/:siteId", requireSession, (req, res) => {
-    const site = getOwnedSite(db, req.params.siteId, req.user.id);
+  router.get("/sites/:siteId", requireSession, asyncRoute(async (req, res) => {
+    const site = await getOwnedSite(db, req.params.siteId, req.user.id);
     res.json({ site: serializeSite(site, config) });
-  });
+  }));
 
   router.patch("/sites/:siteId", requireSession, asyncRoute(async (req, res) => {
-    const site = getOwnedSite(db, req.params.siteId, req.user.id);
+    const site = await getOwnedSite(db, req.params.siteId, req.user.id);
     const name = String(req.body.name || site.name).trim();
     if (!name) {
       throw createHttpError("請輸入網站名稱");
     }
 
     const now = nowIso();
-    db.prepare("UPDATE sites SET name = ?, updated_at = ? WHERE id = ?").run(name, now, site.id);
-    res.json({ site: serializeSite(db.prepare("SELECT * FROM sites WHERE id = ?").get(site.id), config) });
+    await executeResult(db, "UPDATE sites SET name = ?, updated_at = ? WHERE id = ?", [name, now, site.id]);
+    res.json({ site: serializeSite(await queryOne(db, "SELECT * FROM sites WHERE id = ?", [site.id]), config) });
   }));
 
   router.delete("/sites/:siteId", requireSession, asyncRoute(async (req, res) => {
-    const site = getOwnedSite(db, req.params.siteId, req.user.id);
-    db.prepare("DELETE FROM sites WHERE id = ?").run(site.id);
+    const site = await getOwnedSite(db, req.params.siteId, req.user.id);
+    await executeResult(db, "DELETE FROM sites WHERE id = ?", [site.id]);
     await fs.promises.rm(path.join(config.uploadRoot, site.id), { recursive: true, force: true });
     res.json({ ok: true });
   }));
 
   router.post("/sites/:siteId/upload", requireSession, upload.single("file"), asyncRoute(async (req, res) => {
-    const site = getOwnedSite(db, req.params.siteId, req.user.id);
+    const site = await getOwnedSite(db, req.params.siteId, req.user.id);
     if (!req.file) {
       throw createHttpError("請選擇 zip 檔案");
     }
 
     const deploymentId = randomUUID();
-    const versionRow = db.prepare("SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM deployments WHERE site_id = ?").get(site.id);
     const rootPath = path.join(config.uploadRoot, site.id, deploymentId);
     const extracted = await extractStaticSiteZip(req.file.buffer, rootPath, config);
     const now = nowIso();
 
     try {
-      db.exec("BEGIN");
-      db.prepare(`
-        INSERT INTO deployments (id, site_id, version, original_name, root_path, file_count, total_bytes, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        deploymentId,
-        site.id,
-        versionRow.next_version,
-        req.file.originalname,
-        rootPath,
-        extracted.fileCount,
-        extracted.totalBytes,
-        now
-      );
-      db.prepare("UPDATE sites SET active_deployment_id = ?, updated_at = ? WHERE id = ?").run(deploymentId, now, site.id);
-      db.exec("COMMIT");
+      await withTransaction(db, async (connection) => {
+        const versionRow = await queryOne(
+          connection,
+          "SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM deployments WHERE site_id = ?",
+          [site.id]
+        );
+        await executeResult(
+          connection,
+          `
+            INSERT INTO deployments (id, site_id, version, original_name, root_path, file_count, total_bytes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+          [
+            deploymentId,
+            site.id,
+            versionRow.next_version,
+            req.file.originalname,
+            rootPath,
+            extracted.fileCount,
+            extracted.totalBytes,
+            now
+          ]
+        );
+        await executeResult(
+          connection,
+          "UPDATE sites SET active_deployment_id = ?, updated_at = ? WHERE id = ?",
+          [deploymentId, now, site.id]
+        );
+      });
     } catch (error) {
-      db.exec("ROLLBACK");
       await fs.promises.rm(rootPath, { recursive: true, force: true });
       throw error;
     }
 
     res.status(201).json({
-      deployment: publicDeployment(db.prepare("SELECT * FROM deployments WHERE id = ?").get(deploymentId)),
-      site: serializeSite(db.prepare("SELECT * FROM sites WHERE id = ?").get(site.id), config)
+      deployment: publicDeployment(await queryOne(db, "SELECT * FROM deployments WHERE id = ?", [deploymentId])),
+      site: serializeSite(await queryOne(db, "SELECT * FROM sites WHERE id = ?", [site.id]), config)
     });
   }));
 
-  router.get("/sites/:siteId/deployments", requireSession, (req, res) => {
-    const site = getOwnedSite(db, req.params.siteId, req.user.id);
-    const deployments = db.prepare(`
+  router.get("/sites/:siteId/deployments", requireSession, asyncRoute(async (req, res) => {
+    const site = await getOwnedSite(db, req.params.siteId, req.user.id);
+    const deployments = await queryRows(db, `
       SELECT *
       FROM deployments
       WHERE site_id = ?
       ORDER BY version DESC
-    `).all(site.id).map(publicDeployment);
-    res.json({ deployments });
-  });
+    `, [site.id]);
+    res.json({ deployments: deployments.map(publicDeployment) });
+  }));
 
   router.post("/sites/:siteId/deployments/:deploymentId/activate", requireSession, asyncRoute(async (req, res) => {
-    const site = getOwnedSite(db, req.params.siteId, req.user.id);
-    const deployment = db.prepare("SELECT * FROM deployments WHERE id = ? AND site_id = ?").get(req.params.deploymentId, site.id);
+    const site = await getOwnedSite(db, req.params.siteId, req.user.id);
+    const deployment = await queryOne(db, "SELECT * FROM deployments WHERE id = ? AND site_id = ?", [req.params.deploymentId, site.id]);
     if (!deployment) {
       throw createHttpError("找不到部署版本", 404);
     }
 
     const now = nowIso();
-    db.prepare("UPDATE sites SET active_deployment_id = ?, updated_at = ? WHERE id = ?").run(deployment.id, now, site.id);
+    await executeResult(db, "UPDATE sites SET active_deployment_id = ?, updated_at = ? WHERE id = ?", [deployment.id, now, site.id]);
     res.json({
-      site: serializeSite(db.prepare("SELECT * FROM sites WHERE id = ?").get(site.id), config),
+      site: serializeSite(await queryOne(db, "SELECT * FROM sites WHERE id = ?", [site.id]), config),
       deployment: publicDeployment(deployment)
     });
   }));
 
-  router.get("/sites/:siteId/domains", requireSession, (req, res) => {
-    const site = getOwnedSite(db, req.params.siteId, req.user.id);
-    const domains = db.prepare(`
+  router.get("/sites/:siteId/domains", requireSession, asyncRoute(async (req, res) => {
+    const site = await getOwnedSite(db, req.params.siteId, req.user.id);
+    const domains = await queryRows(db, `
       SELECT *
       FROM domains
       WHERE site_id = ?
       ORDER BY created_at DESC
-    `).all(site.id).map(publicDomain);
-    res.json({ domains, cnameTarget: config.cnameTarget });
-  });
+    `, [site.id]);
+    res.json({ domains: domains.map(publicDomain), cnameTarget: config.cnameTarget });
+  }));
 
   router.post("/sites/:siteId/domains", requireSession, asyncRoute(async (req, res) => {
-    const site = getOwnedSite(db, req.params.siteId, req.user.id);
+    const site = await getOwnedSite(db, req.params.siteId, req.user.id);
     const hostname = normalizeHostname(req.body.hostname);
     if (!isValidHostname(hostname)) {
       throw createHttpError("請輸入有效的網域，例如 www.example.com");
@@ -270,19 +286,19 @@ export function createApiRouter({ db, config, dnsResolver }) {
     const now = nowIso();
     const domainId = randomUUID();
     try {
-      db.prepare(`
+      await executeResult(db, `
         INSERT INTO domains (id, site_id, hostname, status, cname_target, created_at)
         VALUES (?, ?, ?, 'pending', ?, ?)
-      `).run(domainId, site.id, hostname, config.cnameTarget, now);
+      `, [domainId, site.id, hostname, config.cnameTarget, now]);
     } catch (error) {
-      if (String(error.message).includes("UNIQUE")) {
+      if (isDuplicateEntry(error)) {
         throw createHttpError("此網域已經被使用", 409);
       }
       throw error;
     }
 
     res.status(201).json({
-      domain: publicDomain(db.prepare("SELECT * FROM domains WHERE id = ?").get(domainId)),
+      domain: publicDomain(await queryOne(db, "SELECT * FROM domains WHERE id = ?", [domainId])),
       cnameTarget: config.cnameTarget
     });
   }));
@@ -293,12 +309,12 @@ export function createApiRouter({ db, config, dnsResolver }) {
   }));
 
   router.delete("/domains/:domainId", requireSession, asyncRoute(async (req, res) => {
-    const result = db.prepare(`
+    const result = await executeResult(db, `
       DELETE FROM domains
       WHERE id = ? AND site_id IN (SELECT id FROM sites WHERE user_id = ?)
-    `).run(req.params.domainId, req.user.id);
+    `, [req.params.domainId, req.user.id]);
 
-    if (!result.changes) {
+    if (!result.affectedRows) {
       throw createHttpError("找不到網域", 404);
     }
     res.json({ ok: true });
@@ -313,8 +329,20 @@ export function errorHandler(error, _req, res, _next) {
     return;
   }
 
-  const status = error.status || 500;
+  const status = error.status || (isDatabaseOperationalError(error) ? 503 : 500);
+  if (status >= 500) {
+    console.error("[site-spono] API error", {
+      code: error?.code,
+      errno: error?.errno,
+      sqlState: error?.sqlState,
+      message: error?.message,
+      stack: error?.stack
+    });
+  }
+
   res.status(status).json({
-    error: status >= 500 ? "伺服器發生錯誤" : error.message
+    error: status >= 500
+      ? (isDatabaseOperationalError(error) ? "資料庫暫時無法使用，請稍後再試" : "伺服器發生錯誤")
+      : error.message
   });
 }

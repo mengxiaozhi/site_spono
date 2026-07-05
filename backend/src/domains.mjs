@@ -1,6 +1,6 @@
 import dns from "node:dns/promises";
 import { normalizeTarget } from "./config.mjs";
-import { nowIso, publicDomain } from "./database.mjs";
+import { executeResult, nowIso, publicDomain, queryOne } from "./database.mjs";
 
 export function normalizeHostname(hostname) {
   const normalized = String(hostname || "")
@@ -27,12 +27,12 @@ export function isValidHostname(hostname) {
 }
 
 export async function verifyDomainRecord(db, domainId, userId, config, resolver = dns.resolveCname) {
-  const row = db.prepare(`
+  const row = await queryOne(db, `
     SELECT domains.*
     FROM domains
     INNER JOIN sites ON sites.id = domains.site_id
     WHERE domains.id = ? AND sites.user_id = ?
-  `).get(domainId, userId);
+  `, [domainId, userId]);
 
   if (!row) {
     const error = new Error("找不到網域");
@@ -48,30 +48,30 @@ export async function verifyDomainRecord(db, domainId, userId, config, resolver 
 
     if (!normalizedRecords.includes(expected)) {
       const errorMessage = `目前 CNAME 為 ${records.join(", ") || "空"}，尚未指向 ${expected}`;
-      db.prepare(`
+      await executeResult(db, `
         UPDATE domains
         SET status = 'failed', last_checked_at = ?, last_error = ?
         WHERE id = ?
-      `).run(checkedAt, errorMessage, row.id);
-      return publicDomain(db.prepare("SELECT * FROM domains WHERE id = ?").get(row.id));
+      `, [checkedAt, errorMessage, row.id]);
+      return publicDomain(await queryOne(db, "SELECT * FROM domains WHERE id = ?", [row.id]));
     }
 
-    db.prepare(`
+    await executeResult(db, `
       UPDATE domains
       SET status = 'verified', last_checked_at = ?, last_error = NULL, verified_at = ?
       WHERE id = ?
-    `).run(checkedAt, checkedAt, row.id);
-    return publicDomain(db.prepare("SELECT * FROM domains WHERE id = ?").get(row.id));
+    `, [checkedAt, checkedAt, row.id]);
+    return publicDomain(await queryOne(db, "SELECT * FROM domains WHERE id = ?", [row.id]));
   } catch (error) {
     const message = error.code === "ENODATA" || error.code === "ENOTFOUND"
       ? `找不到 ${row.hostname} 的 CNAME 紀錄`
       : error.message;
 
-    db.prepare(`
+    await executeResult(db, `
       UPDATE domains
       SET status = 'failed', last_checked_at = ?, last_error = ?
       WHERE id = ?
-    `).run(checkedAt, message, row.id);
-    return publicDomain(db.prepare("SELECT * FROM domains WHERE id = ?").get(row.id));
+    `, [checkedAt, message, row.id]);
+    return publicDomain(await queryOne(db, "SELECT * FROM domains WHERE id = ?", [row.id]));
   }
 }

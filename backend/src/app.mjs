@@ -7,17 +7,18 @@ import { createDatabase } from "./database.mjs";
 import { createApiRouter, errorHandler } from "./routes.mjs";
 import { createDomainMiddleware, createPreviewMiddleware } from "./static-sites.mjs";
 
-export function createApp({ config = loadConfig(), db = createDatabase(config.databasePath), dnsResolver = dns.resolveCname } = {}) {
+export function createApp({ config = loadConfig(), db = createDatabase(config), dnsResolver = dns.resolveCname } = {}) {
   const app = express();
+  const corsOrigins = new Set(config.corsOrigins || [config.frontendOrigin]);
 
   app.set("trust proxy", true);
   app.use(cors({
     origin(origin, callback) {
-      if (!origin || origin === config.frontendOrigin) {
+      if (!origin || corsOrigins.has(origin)) {
         callback(null, true);
         return;
       }
-      callback(new Error("Not allowed by CORS"));
+      callback(null, false);
     },
     credentials: true
   }));

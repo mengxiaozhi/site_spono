@@ -45,6 +45,7 @@ const env = {
   ...process.env,
   BACKEND_PORT: String(backendPort),
   FRONTEND_ORIGIN: frontendOrigin,
+  PUBLIC_BASE_URL: backendOrigin,
   NEXT_PUBLIC_API_BASE_URL: backendOrigin,
   DEMO_MODE: process.env.DEMO_MODE ?? "true"
 };

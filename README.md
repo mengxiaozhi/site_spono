@@ -6,12 +6,14 @@ Next.js frontend and Node.js `.mjs` backend for uploading, publishing, previewin
 
 - Node.js 24+
 - npm 11+
+- MySQL 8+
 
 ## Setup
 
 ```bash
 npm install
 cp .env.example .env
+mysql -u root -p < database/init.sql
 npm run dev
 ```
 
@@ -20,6 +22,28 @@ npm run dev
 - Preview URL pattern: `http://localhost:4000/s/:slug/`
 
 `npm run dev` automatically picks the next available frontend/backend ports when `3000` or `4000` are already occupied. It also enables demo mode by default for local development.
+
+## Production API Proxy
+
+For the `api.spono.tw/site/` reverse proxy, run the backend on `3501` and use the proxied base URL without a trailing slash:
+
+```bash
+BACKEND_PORT=3501
+FRONTEND_ORIGIN=https://site.spono.tw
+CORS_ORIGINS=https://site.spono.tw
+PUBLIC_BASE_URL=https://api.spono.tw/site
+NEXT_PUBLIC_API_BASE_URL=https://api.spono.tw/site
+```
+
+With this setup, frontend requests to `https://api.spono.tw/site/api/...` are proxied to backend routes under `/api/...`, credentialed CORS echoes `https://site.spono.tw`, and preview links use `https://api.spono.tw/site/s/:slug/`.
+
+On startup, the backend verifies the configured MySQL database and creates the required tables when they are missing. If the database user cannot create the database or tables, startup fails with a logged MySQL error code. After deployment, verify the backend and database path with:
+
+```bash
+curl https://api.spono.tw/site/api/health
+```
+
+If the browser reports a CORS failure but this command returns a Cloudflare `502`, the backend process is not reachable. Check the backend startup log for the printed MySQL error code.
 
 ## Core Flow
 
@@ -54,6 +78,6 @@ node --check backend/server.mjs
 ## Notes
 
 - Uploaded static files are stored under `storage/sites`.
-- Metadata is stored in SQLite at `data/app.db` by default.
+- Metadata is stored in MySQL. Configure `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, and `DB_POOL` in `.env`.
 - Static uploads are served as files only; uploaded JavaScript is never executed by the backend.
 - Real custom-domain TLS should be handled by the deployment layer, such as Nginx, Caddy, Cloudflare, or a platform reverse proxy that forwards the original `Host` header.

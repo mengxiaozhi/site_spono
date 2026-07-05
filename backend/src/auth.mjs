@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "node:crypto";
-import { nowIso, publicUser } from "./database.mjs";
+import { executeResult, isDuplicateEntry, nowIso, publicUser, queryOne } from "./database.mjs";
 
 export const AUTH_COOKIE = "site_spono_session";
 
@@ -13,7 +13,7 @@ export function validatePassword(password) {
   return typeof password === "string" && password.length >= 8;
 }
 
-export function createUser(db, email, password) {
+export async function createUser(db, email, password) {
   const normalized = normalizeEmail(email);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
     const error = new Error("請輸入有效的 Email");
@@ -34,11 +34,13 @@ export function createUser(db, email, password) {
   };
 
   try {
-    db.prepare(
-      "INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)"
-    ).run(user.id, user.email, user.passwordHash, user.createdAt);
+    await executeResult(
+      db,
+      "INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
+      [user.id, user.email, user.passwordHash, user.createdAt]
+    );
   } catch (error) {
-    if (String(error.message).includes("UNIQUE")) {
+    if (isDuplicateEntry(error)) {
       const duplicate = new Error("此 Email 已經註冊");
       duplicate.status = 409;
       throw duplicate;
@@ -53,8 +55,8 @@ export function createUser(db, email, password) {
   });
 }
 
-export function authenticateUser(db, email, password) {
-  const row = db.prepare("SELECT * FROM users WHERE email = ?").get(normalizeEmail(email));
+export async function authenticateUser(db, email, password) {
+  const row = await queryOne(db, "SELECT * FROM users WHERE email = ?", [normalizeEmail(email)]);
   if (!row || !bcrypt.compareSync(String(password || ""), row.password_hash)) {
     const error = new Error("Email 或密碼不正確");
     error.status = 401;
@@ -89,7 +91,7 @@ export function clearSessionCookie(res, config) {
   });
 }
 
-export function getSessionUser(req, db, config) {
+export async function getSessionUser(req, db, config) {
   const token = req.cookies?.[AUTH_COOKIE];
   if (!token) {
     return null;
@@ -97,7 +99,7 @@ export function getSessionUser(req, db, config) {
 
   try {
     const payload = jwt.verify(token, config.jwtSecret, { issuer: "site-spono" });
-    const row = db.prepare("SELECT * FROM users WHERE id = ?").get(payload.sub);
+    const row = await queryOne(db, "SELECT * FROM users WHERE id = ?", [payload.sub]);
     return publicUser(row);
   } catch {
     return null;
@@ -105,8 +107,8 @@ export function getSessionUser(req, db, config) {
 }
 
 export function requireAuth(db, config) {
-  return (req, res, next) => {
-    const user = getSessionUser(req, db, config);
+  return async (req, res, next) => {
+    const user = await getSessionUser(req, db, config);
     if (!user) {
       res.status(401).json({ error: "請先登入" });
       return;

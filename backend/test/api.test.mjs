@@ -8,6 +8,7 @@ import { once } from "node:events";
 import JSZip from "jszip";
 import { createApp } from "../src/app.mjs";
 import { loadConfig } from "../src/config.mjs";
+import { createSqliteTestDatabase } from "./sqlite-test-database.mjs";
 
 async function createZip(entries, options = {}) {
   const zip = new JSZip();
@@ -24,7 +25,6 @@ async function createHarness(options = {}) {
   const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), "site-spono-"));
   const config = loadConfig({
     cwd: root,
-    databasePath: path.join(root, "app.db"),
     uploadRoot: path.join(root, "sites"),
     jwtSecret: "test-secret",
     cnameTarget: "sites.example.com",
@@ -34,8 +34,10 @@ async function createHarness(options = {}) {
     maxZipEntries: 20,
     ...options.config
   });
+  const db = options.db || createSqliteTestDatabase(path.join(root, "app.db"));
   const app = createApp({
     config,
+    db,
     dnsResolver: options.dnsResolver
   });
   const server = app.listen(0, "127.0.0.1");
@@ -82,6 +84,7 @@ async function createHarness(options = {}) {
     await new Promise((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
+    db.close?.();
     await fs.promises.rm(root, { recursive: true, force: true });
   }
 
@@ -142,6 +145,87 @@ test("auth protects sites across users", async () => {
 
     const blocked = await bob.request(`/api/sites/${site.id}`);
     assert.equal(blocked.response.status, 404);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("reports database health", async () => {
+  const harness = await createHarness();
+  try {
+    const api = harness.client();
+    const health = await api.request("/api/health");
+    assert.equal(health.response.status, 200);
+    assert.deepEqual(health.data, { ok: true, database: "ok" });
+  } finally {
+    await harness.close();
+  }
+});
+
+test("maps database startup drift to a service error", async () => {
+  const originalError = console.error;
+  console.error = () => {};
+
+  const harness = await createHarness({
+    db: {
+      async query() {
+        const error = new Error("Table 'site_spono.users' doesn't exist");
+        error.code = "ER_NO_SUCH_TABLE";
+        throw error;
+      }
+    }
+  });
+
+  try {
+    const api = harness.client();
+    const health = await api.request("/api/health", {
+      headers: {
+        Origin: "https://site.spono.tw"
+      }
+    });
+    assert.equal(health.response.status, 503);
+    assert.equal(health.response.headers.get("access-control-allow-origin"), "https://site.spono.tw");
+    assert.equal(health.response.headers.get("access-control-allow-credentials"), "true");
+    assert.equal(health.data.error, "資料庫暫時無法使用，請稍後再試");
+  } finally {
+    console.error = originalError;
+    await harness.close();
+  }
+});
+
+test("normalizes proxied public URLs and frontend origins", async () => {
+  const harness = await createHarness({
+    config: {
+      frontendOrigin: "https://site.spono.tw/",
+      corsOrigins: "https://site.spono.tw, https://admin.spono.tw/",
+      publicBaseUrl: "https://api.spono.tw/site/"
+    }
+  });
+
+  try {
+    const api = harness.client();
+    const site = await registerAndCreateSite(api, "Proxy Site");
+    assert.equal(site.previewUrl, "https://api.spono.tw/site/s/proxy-site/");
+
+    const response = await fetch(`${harness.baseUrl}/api/demo/status`, {
+      headers: {
+        Origin: "https://site.spono.tw"
+      }
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("access-control-allow-origin"), "https://site.spono.tw");
+    assert.equal(response.headers.get("access-control-allow-credentials"), "true");
+
+    const preflight = await fetch(`${harness.baseUrl}/api/auth/me`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://admin.spono.tw",
+        "Access-Control-Request-Method": "GET"
+      }
+    });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get("access-control-allow-origin"), "https://admin.spono.tw");
+    assert.equal(preflight.headers.get("access-control-allow-credentials"), "true");
   } finally {
     await harness.close();
   }
