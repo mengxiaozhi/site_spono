@@ -88,10 +88,27 @@ export function createSqliteTestDatabase(databasePath) {
       FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE generation_jobs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      requested_site_id TEXT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      error_message TEXT,
+      result_site_id TEXT,
+      result_deployment_id TEXT,
+      generated_site_name TEXT,
+      generated_summary TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX idx_sites_user_id ON sites(user_id);
     CREATE INDEX idx_deployments_site_id ON deployments(site_id);
     CREATE INDEX idx_domains_site_id ON domains(site_id);
     CREATE INDEX idx_domains_hostname ON domains(hostname);
+    CREATE INDEX idx_generation_jobs_user_id ON generation_jobs(user_id);
   `);
 
   return {

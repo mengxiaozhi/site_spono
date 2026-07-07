@@ -33,6 +33,22 @@ export type Deployment = {
   createdAt: string;
 };
 
+export type GenerationJob = {
+  id: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  error: string | null;
+  requestedSiteId: string | null;
+  resultSiteId: string | null;
+  resultDeploymentId: string | null;
+  generated: {
+    siteName: string | null;
+    summary: string | null;
+  };
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+};
+
 export type Domain = {
   id: string;
   siteId: string;

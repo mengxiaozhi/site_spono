@@ -132,6 +132,17 @@ async function registerAndCreateSite(api, name = "Demo Site") {
   return created.data.site;
 }
 
+async function waitForGenerationJob(api, jobId) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const result = await api.request(`/api/generation-jobs/${jobId}`);
+    if (result.data.job.status === "succeeded" || result.data.job.status === "failed") {
+      return result;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Generation job ${jobId} did not finish`);
+}
+
 test("auth protects sites across users", async () => {
   const harness = await createHarness();
   try {
@@ -158,7 +169,14 @@ test("reports database health", async () => {
     const api = harness.client();
     const health = await api.request("/api/health");
     assert.equal(health.response.status, 200);
-    assert.deepEqual(health.data, { ok: true, database: "ok" });
+    assert.deepEqual(health.data, {
+      ok: true,
+      database: "ok",
+      generator: {
+        model: "gemini-3.1-flash-lite",
+        timeoutMs: 12000
+      }
+    });
   } finally {
     await harness.close();
   }
@@ -251,6 +269,13 @@ test("normalizes proxied public URLs and frontend origins", async () => {
   }
 });
 
+test("maps legacy slow Gemini model config to the fast production model", () => {
+  const config = loadConfig({
+    geminiModel: "gemini-3.5-flash"
+  });
+  assert.equal(config.geminiModel, "gemini-3.1-flash-lite");
+});
+
 test("uploads a valid static site zip and serves preview assets", async () => {
   const harness = await createHarness();
   try {
@@ -320,12 +345,18 @@ test("generates a Gemini static site deployment", async () => {
         style: "乾淨明亮"
       }
     });
-    assert.equal(generated.response.status, 201);
-    assert.equal(generated.data.site.slug, "gemini-brand");
-    assert.equal(generated.data.deployment.version, 1);
-    assert.equal(generated.data.deployment.fileCount, 2);
+    assert.equal(generated.response.status, 202);
+    assert.match(generated.data.job.status, /^(queued|running)$/);
 
-    const html = await fetch(`${harness.baseUrl}/s/${generated.data.site.slug}/`);
+    const completed = await waitForGenerationJob(api, generated.data.job.id);
+    assert.equal(completed.response.status, 200);
+    assert.equal(completed.data.job.status, "succeeded");
+    assert.equal(completed.data.site.slug, "gemini-brand");
+    assert.equal(completed.data.deployment.version, 1);
+    assert.equal(completed.data.deployment.fileCount, 2);
+    assert.equal(completed.data.generated.summary, "Generated landing page");
+
+    const html = await fetch(`${harness.baseUrl}/s/${completed.data.site.slug}/`);
     assert.equal(html.status, 200);
     assert.match(await html.text(), /科技顧問/);
   } finally {
@@ -360,8 +391,12 @@ test("rejects unsafe generated Gemini markup", async () => {
         brief: "幫我生成一個包含互動效果的網站"
       }
     });
-    assert.equal(generated.response.status, 502);
-    assert.match(generated.data.error, /不允許/);
+    assert.equal(generated.response.status, 202);
+
+    const completed = await waitForGenerationJob(api, generated.data.job.id);
+    assert.equal(completed.response.status, 200);
+    assert.equal(completed.data.job.status, "failed");
+    assert.match(completed.data.job.error, /不允許/);
   } finally {
     await harness.close();
   }

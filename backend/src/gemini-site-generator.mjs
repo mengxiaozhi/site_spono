@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const DEFAULT_GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions";
-const DEFAULT_GEMINI_TIMEOUT_MS = 25000;
+const DEFAULT_GEMINI_TIMEOUT_MS = 12000;
 const MAX_HTML_BYTES = 180 * 1024;
 const MAX_CSS_BYTES = 120 * 1024;
 

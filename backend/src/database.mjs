@@ -107,6 +107,28 @@ export async function ensureDatabaseSchema(db) {
       CONSTRAINT fk_domains_site FOREIGN KEY (site_id) REFERENCES sites (id) ON DELETE CASCADE ON UPDATE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS generation_jobs (
+      id CHAR(36) NOT NULL,
+      user_id CHAR(36) NOT NULL,
+      requested_site_id CHAR(36) DEFAULT NULL,
+      status ENUM('queued', 'running', 'succeeded', 'failed') NOT NULL DEFAULT 'queued',
+      error_message VARCHAR(512) DEFAULT NULL,
+      result_site_id CHAR(36) DEFAULT NULL,
+      result_deployment_id CHAR(36) DEFAULT NULL,
+      generated_site_name VARCHAR(160) DEFAULT NULL,
+      generated_summary VARCHAR(500) DEFAULT NULL,
+      created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL,
+      completed_at DATETIME DEFAULT NULL,
+      PRIMARY KEY (id),
+      KEY idx_generation_jobs_user_id (user_id),
+      KEY idx_generation_jobs_status (status),
+      KEY idx_generation_jobs_created_at (created_at),
+      CONSTRAINT fk_generation_jobs_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE ON UPDATE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
 }
 
 export async function initializeDatabase(config) {

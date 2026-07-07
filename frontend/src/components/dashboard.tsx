@@ -28,7 +28,7 @@ import {
 import { gsap } from "gsap";
 import type { FormEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, apiRequest, formatBytes, type Deployment, type Domain, type Site, type User } from "@/lib/api";
+import { ApiError, apiRequest, formatBytes, type Deployment, type Domain, type GenerationJob, type Site, type User } from "@/lib/api";
 
 type AuthMode = "login" | "register";
 type DashboardTab = "overview" | "deployments" | "domains" | "settings";
@@ -163,6 +163,12 @@ function dateTime(value: string | null) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(new Date(value));
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 function shortDate(value: string | null) {
@@ -653,6 +659,36 @@ export function Dashboard() {
     setCnameTarget(domainData.cnameTarget);
   }
 
+  async function waitForGenerationJob(jobId: string) {
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const data = await apiRequest<{
+        job: GenerationJob;
+        site?: Site;
+        deployment?: Deployment;
+        generated?: { siteName: string | null; summary: string | null };
+      }>(`/api/generation-jobs/${jobId}`);
+
+      if (data.job.status === "succeeded") {
+        if (!data.site || !data.deployment) {
+          throw new Error("Gemini 已完成，但找不到部署結果");
+        }
+        return {
+          site: data.site,
+          deployment: data.deployment,
+          generated: data.generated || data.job.generated
+        };
+      }
+
+      if (data.job.status === "failed") {
+        throw new Error(data.job.error || "Gemini 生成失敗");
+      }
+
+      await wait(1500);
+    }
+
+    throw new Error("Gemini 仍在生成中，請稍後重新整理查看結果");
+  }
+
   async function bootstrap() {
     setIsBooting(true);
     try {
@@ -782,10 +818,8 @@ export function Dashboard() {
     setIsBusy(true);
     setMessage(null);
     try {
-      const data = await apiRequest<{
-        site: Site;
-        deployment: Deployment;
-        generated: { siteName: string; summary: string };
+      const started = await apiRequest<{
+        job: GenerationJob;
       }>("/api/sites/generate", {
         method: "POST",
         body: {
@@ -798,6 +832,8 @@ export function Dashboard() {
           contact: aiContact
         }
       });
+      setMessage("Gemini 正在生成，完成後會自動建立部署版本");
+      const data = await waitForGenerationJob(started.job.id);
       setAiBrief("");
       setAiAudience("");
       setAiStyle("");
@@ -808,7 +844,7 @@ export function Dashboard() {
       await loadSites(data.site.id);
       await loadDetails(data.site.id);
       setActiveTab("overview");
-      setMessage(`Gemini 已生成 v${data.deployment.version}，下一步請設定網域：${data.generated.summary}`);
+      setMessage(`Gemini 已生成 v${data.deployment.version}，下一步請設定網域：${data.generated.summary || "已建立部署版本"}`);
     } catch (error) {
       handleApiError(error, "Gemini 生成失敗");
     } finally {

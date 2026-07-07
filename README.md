@@ -50,9 +50,9 @@ The response should include `Access-Control-Allow-Origin: https://site.spono.tw`
 
 ## Gemini Site Generation
 
-Set `GEMINI_API_KEY` on the backend to enable the dashboard's AI website generator. `GEMINI_MODEL` defaults to `gemini-3.1-flash-lite`, `GEMINI_THINKING_LEVEL` defaults to `minimal`, and `GEMINI_TIMEOUT_MS` defaults to `25000` so provider latency returns an app-level JSON error with CORS before the reverse proxy emits a headerless `502`.
+Set `GEMINI_API_KEY` on the backend to enable the dashboard's AI website generator. `GEMINI_MODEL` defaults to `gemini-3.1-flash-lite`, `GEMINI_THINKING_LEVEL` defaults to `minimal`, and `GEMINI_TIMEOUT_MS` defaults to `12000` so provider latency returns an app-level JSON error with CORS before the reverse proxy emits a headerless `502`. A legacy `GEMINI_MODEL=gemini-3.5-flash` value is normalized to `gemini-3.1-flash-lite` at runtime because it repeatedly exceeds the production gateway timeout.
 
-The generator creates a static deployment from two files: `index.html` and `assets/style.css`. Generated output is rejected when it contains script tags, inline event handlers, `javascript:` URLs, forms, iframes, or external CSS/link resources.
+The generator runs as an asynchronous job: `POST /api/sites/generate` returns a job id immediately, and the frontend polls `GET /api/generation-jobs/:jobId` until the deployment is ready. This keeps the public request under the gateway timeout even when Gemini latency spikes. Generated output creates a static deployment from two files: `index.html` and `assets/style.css`. Generated output is rejected when it contains script tags, inline event handlers, `javascript:` URLs, forms, iframes, or external CSS/link resources.
 
 On startup, the backend verifies the configured MySQL database and creates the required tables when they are missing. If the database user cannot create the database or tables, startup fails with a logged MySQL error code. After deployment, verify the backend and database path with:
 

@@ -4,6 +4,8 @@ import path from "node:path";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const productionFrontendOrigin = "https://site.spono.tw";
+const fastGeminiModel = "gemini-3.1-flash-lite";
+const slowGeminiModels = new Set(["gemini-3.5-flash"]);
 
 loadDotenv();
 loadDotenv({ path: path.join(projectRoot, ".env") });
@@ -74,6 +76,11 @@ function pathPrefixFromUrl(value) {
   }
 }
 
+function normalizeGeminiModel(value) {
+  const model = String(value || fastGeminiModel).trim();
+  return slowGeminiModels.has(model) ? fastGeminiModel : model;
+}
+
 export function loadConfig(overrides = {}) {
   const cwd = overrides.cwd ?? projectRoot;
   const port = numberFromEnv(overrides.port ?? process.env.BACKEND_PORT, 4000);
@@ -110,10 +117,10 @@ export function loadConfig(overrides = {}) {
     maxUnzippedBytes: numberFromEnv(overrides.maxUnzippedMb ?? process.env.MAX_UNZIPPED_MB, maxUploadMb * 4) * 1024 * 1024,
     maxZipEntries: numberFromEnv(overrides.maxZipEntries ?? process.env.MAX_ZIP_ENTRIES, 2000),
     geminiApiKey: overrides.geminiApiKey ?? process.env.GEMINI_API_KEY ?? "",
-    geminiModel: overrides.geminiModel ?? process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite",
+    geminiModel: normalizeGeminiModel(overrides.geminiModel ?? process.env.GEMINI_MODEL ?? fastGeminiModel),
     geminiEndpoint: normalizeBaseUrl(overrides.geminiEndpoint ?? process.env.GEMINI_ENDPOINT ?? "https://generativelanguage.googleapis.com/v1beta/interactions"),
     geminiThinkingLevel: overrides.geminiThinkingLevel ?? process.env.GEMINI_THINKING_LEVEL ?? "minimal",
-    geminiTimeoutMs: numberFromEnv(overrides.geminiTimeoutMs ?? process.env.GEMINI_TIMEOUT_MS, 25000),
+    geminiTimeoutMs: numberFromEnv(overrides.geminiTimeoutMs ?? process.env.GEMINI_TIMEOUT_MS, 12000),
     demoMode: overrides.demoMode ?? booleanFromEnv(process.env.DEMO_MODE, false),
     isProduction
   };

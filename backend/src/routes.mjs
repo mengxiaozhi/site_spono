@@ -63,6 +63,24 @@ function serializeSite(row, config) {
   };
 }
 
+function serializeGenerationJob(row) {
+  return {
+    id: row.id,
+    status: row.status,
+    error: row.error_message || null,
+    requestedSiteId: row.requested_site_id || null,
+    resultSiteId: row.result_site_id || null,
+    resultDeploymentId: row.result_deployment_id || null,
+    generated: {
+      siteName: row.generated_site_name || null,
+      summary: row.generated_summary || null
+    },
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    completedAt: row.completed_at || null
+  };
+}
+
 function createUpload(config) {
   return multer({
     storage: multer.memoryStorage(),
@@ -101,6 +119,118 @@ function normalizeGenerationInput(body, fallbackName = "") {
   };
 }
 
+function generatorErrorMessage(error) {
+  return String(error?.message || "Gemini 生成失敗").slice(0, 512);
+}
+
+async function markGenerationJob(db, jobId, status, fields = {}) {
+  const now = nowIso();
+  await executeResult(db, `
+    UPDATE generation_jobs
+    SET status = ?,
+        error_message = ?,
+        result_site_id = ?,
+        result_deployment_id = ?,
+        generated_site_name = ?,
+        generated_summary = ?,
+        updated_at = ?,
+        completed_at = ?
+    WHERE id = ?
+  `, [
+    status,
+    fields.errorMessage ?? null,
+    fields.resultSiteId ?? null,
+    fields.resultDeploymentId ?? null,
+    fields.generatedSiteName ?? null,
+    fields.generatedSummary ?? null,
+    now,
+    status === "succeeded" || status === "failed" ? now : null,
+    jobId
+  ]);
+}
+
+async function processGenerationJob({ db, config, jobId, userId, existingSite, generationInput, siteGenerator }) {
+  let rootPath;
+  try {
+    await markGenerationJob(db, jobId, "running");
+    const generatedSite = await siteGenerator({ config, input: generationInput });
+    const now = nowIso();
+    const site = existingSite || {
+      id: randomUUID(),
+      userId,
+      name: generationInput.name,
+      slug: await createUniqueSlug(db, generationInput.name),
+      createdAt: now,
+      updatedAt: now
+    };
+    const deploymentId = randomUUID();
+    rootPath = path.join(config.uploadRoot, site.id, deploymentId);
+    const fileStats = await writeGeneratedSiteFiles(generatedSite, rootPath);
+
+    await withTransaction(db, async (connection) => {
+      if (!existingSite) {
+        await executeResult(connection, `
+          INSERT INTO sites (id, user_id, name, slug, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `, [site.id, site.userId, site.name, site.slug, site.createdAt, site.updatedAt]);
+      }
+
+      const versionRow = await queryOne(
+        connection,
+        "SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM deployments WHERE site_id = ?",
+        [site.id]
+      );
+      await executeResult(
+        connection,
+        `
+          INSERT INTO deployments (id, site_id, version, original_name, root_path, file_count, total_bytes, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          deploymentId,
+          site.id,
+          versionRow.next_version,
+          "gemini-generated-site",
+          rootPath,
+          fileStats.fileCount,
+          fileStats.totalBytes,
+          now
+        ]
+      );
+      await executeResult(
+        connection,
+        "UPDATE sites SET active_deployment_id = ?, updated_at = ? WHERE id = ?",
+        [deploymentId, now, site.id]
+      );
+      await markGenerationJob(connection, jobId, "succeeded", {
+        resultSiteId: site.id,
+        resultDeploymentId: deploymentId,
+        generatedSiteName: generatedSite.siteName,
+        generatedSummary: generatedSite.summary
+      });
+    });
+  } catch (error) {
+    if (rootPath) {
+      await fs.promises.rm(rootPath, { recursive: true, force: true });
+    }
+    const message = isDuplicateEntry(error)
+      ? "網站名稱產生的 slug 已被使用，請換一個名稱"
+      : generatorErrorMessage(error);
+    try {
+      await markGenerationJob(db, jobId, "failed", { errorMessage: message });
+    } catch (markError) {
+      console.error("[site-spono] Failed to mark generation job", {
+        jobId,
+        message: markError?.message
+      });
+    }
+    console.error("[site-spono] Generation job failed", {
+      jobId,
+      message: error?.message
+    });
+  }
+}
+
 export function createApiRouter({ db, config, dnsResolver, siteGenerator = generateSiteWithGemini }) {
   const router = express.Router();
   const upload = createUpload(config);
@@ -112,7 +242,14 @@ export function createApiRouter({ db, config, dnsResolver, siteGenerator = gener
 
   router.get("/health", asyncRoute(async (_req, res) => {
     await queryOne(db, "SELECT 1 AS ok");
-    res.json({ ok: true, database: "ok" });
+    res.json({
+      ok: true,
+      database: "ok",
+      generator: {
+        model: config.geminiModel,
+        timeoutMs: config.geminiTimeoutMs
+      }
+    });
   }));
 
   router.post("/demo/login", asyncRoute(async (_req, res) => {
@@ -189,74 +326,45 @@ export function createApiRouter({ db, config, dnsResolver, siteGenerator = gener
     const requestedSiteId = String(req.body.siteId || "").trim();
     const existingSite = requestedSiteId ? await getOwnedSite(db, requestedSiteId, req.user.id) : null;
     const generationInput = normalizeGenerationInput(req.body, existingSite?.name);
-    const generatedSite = await siteGenerator({ config, input: generationInput });
     const now = nowIso();
-    const site = existingSite || {
-      id: randomUUID(),
+    const jobId = randomUUID();
+
+    await executeResult(db, `
+      INSERT INTO generation_jobs (id, user_id, requested_site_id, status, created_at, updated_at)
+      VALUES (?, ?, ?, 'queued', ?, ?)
+    `, [jobId, req.user.id, existingSite?.id || null, now, now]);
+
+    processGenerationJob({
+      db,
+      config,
+      jobId,
       userId: req.user.id,
-      name: generationInput.name,
-      slug: await createUniqueSlug(db, generationInput.name),
-      createdAt: now,
-      updatedAt: now
-    };
-    const deploymentId = randomUUID();
-    const rootPath = path.join(config.uploadRoot, site.id, deploymentId);
-    let fileStats;
+      existingSite,
+      generationInput,
+      siteGenerator
+    });
 
-    try {
-      fileStats = await writeGeneratedSiteFiles(generatedSite, rootPath);
-      await withTransaction(db, async (connection) => {
-        if (!existingSite) {
-          await executeResult(connection, `
-            INSERT INTO sites (id, user_id, name, slug, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `, [site.id, site.userId, site.name, site.slug, site.createdAt, site.updatedAt]);
-        }
+    res.status(202).json({
+      job: serializeGenerationJob(await queryOne(db, "SELECT * FROM generation_jobs WHERE id = ?", [jobId]))
+    });
+  }));
 
-        const versionRow = await queryOne(
-          connection,
-          "SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM deployments WHERE site_id = ?",
-          [site.id]
-        );
-        await executeResult(
-          connection,
-          `
-            INSERT INTO deployments (id, site_id, version, original_name, root_path, file_count, total_bytes, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          `,
-          [
-            deploymentId,
-            site.id,
-            versionRow.next_version,
-            "gemini-generated-site",
-            rootPath,
-            fileStats.fileCount,
-            fileStats.totalBytes,
-            now
-          ]
-        );
-        await executeResult(
-          connection,
-          "UPDATE sites SET active_deployment_id = ?, updated_at = ? WHERE id = ?",
-          [deploymentId, now, site.id]
-        );
-      });
-    } catch (error) {
-      await fs.promises.rm(rootPath, { recursive: true, force: true });
-      if (isDuplicateEntry(error)) {
-        throw createHttpError("網站名稱產生的 slug 已被使用，請換一個名稱", 409);
-      }
-      throw error;
+  router.get("/generation-jobs/:jobId", requireSession, asyncRoute(async (req, res) => {
+    const job = await queryOne(db, "SELECT * FROM generation_jobs WHERE id = ? AND user_id = ?", [req.params.jobId, req.user.id]);
+    if (!job) {
+      throw createHttpError("找不到生成工作", 404);
     }
 
-    res.status(201).json({
-      site: serializeSite(await queryOne(db, "SELECT * FROM sites WHERE id = ?", [site.id]), config),
-      deployment: publicDeployment(await queryOne(db, "SELECT * FROM deployments WHERE id = ?", [deploymentId])),
-      generated: {
-        siteName: generatedSite.siteName,
-        summary: generatedSite.summary
-      }
-    });
+    const payload = { job: serializeGenerationJob(job) };
+    if (job.status === "succeeded" && job.result_site_id && job.result_deployment_id) {
+      payload.site = serializeSite(await queryOne(db, "SELECT * FROM sites WHERE id = ?", [job.result_site_id]), config);
+      payload.deployment = publicDeployment(await queryOne(db, "SELECT * FROM deployments WHERE id = ?", [job.result_deployment_id]));
+      payload.generated = {
+        siteName: job.generated_site_name,
+        summary: job.generated_summary
+      };
+    }
+    res.json(payload);
   }));
 
   router.get("/sites/:siteId", requireSession, asyncRoute(async (req, res) => {
