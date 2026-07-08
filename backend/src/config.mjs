@@ -119,6 +119,8 @@ export function loadConfig(overrides = {}) {
     geminiApiKey: overrides.geminiApiKey ?? process.env.GEMINI_API_KEY ?? "",
     geminiModel: normalizeGeminiModel(overrides.geminiModel ?? process.env.GEMINI_MODEL ?? fastGeminiModel),
     geminiEndpoint: normalizeBaseUrl(overrides.geminiEndpoint ?? process.env.GEMINI_ENDPOINT ?? "https://generativelanguage.googleapis.com/v1beta/interactions"),
+    geminiProxyUrl: normalizeBaseUrl(overrides.geminiProxyUrl ?? process.env.GEMINI_PROXY_URL ?? ""),
+    geminiProxyToken: overrides.geminiProxyToken ?? process.env.GEMINI_PROXY_TOKEN ?? "",
     geminiThinkingLevel: overrides.geminiThinkingLevel ?? process.env.GEMINI_THINKING_LEVEL ?? "minimal",
     geminiTimeoutMs: numberFromEnv(overrides.geminiTimeoutMs ?? process.env.GEMINI_TIMEOUT_MS, 12000),
     demoMode: overrides.demoMode ?? booleanFromEnv(process.env.DEMO_MODE, false),

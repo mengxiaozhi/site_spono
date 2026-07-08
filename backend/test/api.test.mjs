@@ -427,6 +427,159 @@ test("times out slow Gemini provider calls before the gateway does", async () =>
   );
 });
 
+test("explains unsupported Gemini API regions", async () => {
+  await assert.rejects(
+    () => generateSiteWithGemini({
+      config: loadConfig({
+        geminiApiKey: "test-key"
+      }),
+      input: {
+        name: "Region Blocked",
+        brief: "請生成一個用來測試區域限制錯誤的品牌網站"
+      },
+      fetchImpl: async () => new Response(JSON.stringify({
+        error: {
+          message: "This API is not available in your current location. See https://ai.google.dev/gemini-api/docs/available-regions."
+        }
+      }), {
+        status: 400,
+        headers: {
+          "Content-Type": "application/json"
+        }
+      })
+    }),
+    (error) => {
+      assert.equal(error.status, 503);
+      assert.match(error.message, /後端伺服器出口所在地/);
+      return true;
+    }
+  );
+});
+
+test("routes Gemini provider calls through the configured proxy", async () => {
+  let capturedRequest;
+  const generatedSite = await generateSiteWithGemini({
+    config: loadConfig({
+      geminiApiKey: "",
+      geminiProxyUrl: "https://site.spono.tw/api/internal/gemini/interactions",
+      geminiProxyToken: "proxy-secret"
+    }),
+    input: {
+      name: "Proxy Site",
+      brief: "請生成一個用來測試 Vercel Gemini proxy 的品牌網站"
+    },
+    fetchImpl: async (url, init) => {
+      capturedRequest = { url, init };
+      return new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          siteName: "Proxy Site",
+          summary: "Generated through proxy",
+          files: {
+            indexHtml: "<!doctype html><html><head><link rel=\"stylesheet\" href=\"assets/style.css\"></head><body><main><h1>Proxy Site</h1></main></body></html>",
+            css: "body{color:#123;background:#fff}"
+          }
+        })
+      }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json"
+        }
+      });
+    }
+  });
+
+  assert.equal(capturedRequest.url, "https://site.spono.tw/api/internal/gemini/interactions");
+  const headers = new Headers(capturedRequest.init.headers);
+  assert.equal(headers.get("authorization"), "Bearer proxy-secret");
+  assert.equal(headers.get("x-goog-api-key"), null);
+  assert.equal(JSON.parse(capturedRequest.init.body).model, "gemini-3.1-flash-lite");
+  assert.equal(generatedSite.siteName, "Proxy Site");
+  assert.equal(generatedSite.summary, "Generated through proxy");
+});
+
+test("requires a proxy token when Gemini proxy mode is enabled", async () => {
+  await assert.rejects(
+    () => generateSiteWithGemini({
+      config: loadConfig({
+        geminiApiKey: "",
+        geminiProxyUrl: "https://site.spono.tw/api/internal/gemini/interactions",
+        geminiProxyToken: ""
+      }),
+      input: {
+        name: "Missing Proxy Token",
+        brief: "請生成一個用來測試 proxy token 驗證的品牌網站"
+      }
+    }),
+    (error) => {
+      assert.equal(error.status, 503);
+      assert.match(error.message, /proxy token/);
+      return true;
+    }
+  );
+});
+
+test("reports Gemini proxy mode in diagnostics", async () => {
+  const originalFetch = globalThis.fetch;
+  const proxyRequests = [];
+  let harness;
+
+  globalThis.fetch = async (url, init = {}) => {
+    const href = typeof url === "string" ? url : url?.href || url?.url || String(url);
+    if (href.startsWith("http://127.0.0.1:")) {
+      return originalFetch(url, init);
+    }
+    if (href === "https://api.ipify.org?format=json") {
+      return new Response(JSON.stringify({ ip: "203.0.113.10" }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json"
+        }
+      });
+    }
+    if (href === "https://site.spono.tw/api/internal/gemini/interactions") {
+      proxyRequests.push(init);
+      return new Response(JSON.stringify({ output_text: "OK" }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json"
+        }
+      });
+    }
+    throw new Error(`Unexpected fetch URL: ${href}`);
+  };
+
+  try {
+    harness = await createHarness({
+      config: {
+        geminiApiKey: "",
+        geminiProxyUrl: "https://site.spono.tw/api/internal/gemini/interactions",
+        geminiProxyToken: "proxy-secret"
+      }
+    });
+    const api = harness.client();
+    const register = await api.request("/api/auth/register", {
+      method: "POST",
+      body: { email: `${crypto.randomUUID()}@example.com`, password: "password123" }
+    });
+    assert.equal(register.response.status, 201);
+
+    const diagnostics = await api.request("/api/gemini/diagnostics");
+    assert.equal(diagnostics.response.status, 200);
+    assert.equal(diagnostics.data.config.mode, "proxy");
+    assert.equal(diagnostics.data.config.endpointHost, "site.spono.tw");
+    assert.equal(diagnostics.data.egress.ip, "203.0.113.10");
+    assert.equal(diagnostics.data.gemini.mode, "proxy");
+    assert.equal(diagnostics.data.gemini.ok, true);
+
+    const headers = new Headers(proxyRequests[0].headers);
+    assert.equal(headers.get("authorization"), "Bearer proxy-secret");
+    assert.equal(headers.get("x-goog-api-key"), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await harness?.close();
+  }
+});
+
 test("rejects zips without root index and unsafe paths", async () => {
   const harness = await createHarness();
   try {

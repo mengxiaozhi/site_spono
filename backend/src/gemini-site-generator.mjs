@@ -119,6 +119,23 @@ function parseJsonText(text) {
   }
 }
 
+export function isGeminiUnavailableLocationError(message) {
+  return /not available in your current location|location is not supported|region/i.test(String(message || ""));
+}
+
+function createGeminiApiError(payload) {
+  const message = typeof payload?.error === "string"
+    ? payload.error
+    : payload?.error?.message || "Gemini API 呼叫失敗";
+  if (isGeminiUnavailableLocationError(message)) {
+    throw createGeneratorError(
+      "Gemini API 不支援目前後端伺服器出口所在地。請將 backend 部署到 Google AI Gemini API 支援地區，例如 Taiwan、Japan、Singapore 或 United States，或改用 Gemini Enterprise / Vertex AI。",
+      503
+    );
+  }
+  throw createGeneratorError(message);
+}
+
 function normalizeGeneratedSite(value) {
   const siteName = limitText(value?.siteName, 120);
   const summary = limitText(value?.summary, 500);
@@ -199,7 +216,11 @@ ${html}
 }
 
 export async function generateSiteWithGemini({ config, input, fetchImpl = fetch }) {
-  if (!config.geminiApiKey) {
+  const useProxy = Boolean(config.geminiProxyUrl);
+  if (useProxy && !config.geminiProxyToken) {
+    throw createGeneratorError("Gemini proxy token 尚未設定", 503);
+  }
+  if (!useProxy && !config.geminiApiKey) {
     throw createGeneratorError("Gemini API key 尚未設定", 503);
   }
 
@@ -207,30 +228,33 @@ export async function generateSiteWithGemini({ config, input, fetchImpl = fetch 
   const timeoutMs = config.geminiTimeoutMs || DEFAULT_GEMINI_TIMEOUT_MS;
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response;
+  const requestBody = {
+    model: config.geminiModel,
+    store: false,
+    system_instruction: "你是 Site Spono 的網站生成器。請生成安全、可部署、靜態、無 JavaScript 的 HTML/CSS 網站。",
+    input: buildPrompt(input),
+    generation_config: {
+      temperature: 0.7,
+      thinking_level: config.geminiThinkingLevel || "minimal"
+    },
+    response_format: {
+      type: "text",
+      mime_type: "application/json",
+      schema: generatedSiteSchema
+    }
+  };
 
   try {
-    response = await fetchImpl(config.geminiEndpoint || DEFAULT_GEMINI_ENDPOINT, {
+    response = await fetchImpl(useProxy ? config.geminiProxyUrl : config.geminiEndpoint || DEFAULT_GEMINI_ENDPOINT, {
       method: "POST",
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
-        "x-goog-api-key": config.geminiApiKey
+        ...(useProxy
+          ? { Authorization: `Bearer ${config.geminiProxyToken}` }
+          : { "x-goog-api-key": config.geminiApiKey })
       },
-      body: JSON.stringify({
-        model: config.geminiModel,
-        store: false,
-        system_instruction: "你是 Site Spono 的網站生成器。請生成安全、可部署、靜態、無 JavaScript 的 HTML/CSS 網站。",
-        input: buildPrompt(input),
-        generation_config: {
-          temperature: 0.7,
-          thinking_level: config.geminiThinkingLevel || "minimal"
-        },
-        response_format: {
-          type: "text",
-          mime_type: "application/json",
-          schema: generatedSiteSchema
-        }
-      })
+      body: JSON.stringify(requestBody)
     });
   } catch (error) {
     if (error?.name === "AbortError") {
@@ -245,7 +269,7 @@ export async function generateSiteWithGemini({ config, input, fetchImpl = fetch 
   const payload = payloadText ? parseJsonText(payloadText) : {};
 
   if (!response.ok) {
-    throw createGeneratorError(payload?.error?.message || "Gemini API 呼叫失敗");
+    createGeminiApiError(payload);
   }
 
   return normalizeGeneratedSite(parseJsonText(extractInteractionText(payload)));

@@ -50,7 +50,20 @@ The response should include `Access-Control-Allow-Origin: https://site.spono.tw`
 
 ## Gemini Site Generation
 
-Set `GEMINI_API_KEY` on the backend to enable the dashboard's AI website generator. `GEMINI_MODEL` defaults to `gemini-3.1-flash-lite`, `GEMINI_THINKING_LEVEL` defaults to `minimal`, and `GEMINI_TIMEOUT_MS` defaults to `12000` so provider latency returns an app-level JSON error with CORS before the reverse proxy emits a headerless `502`. A legacy `GEMINI_MODEL=gemini-3.5-flash` value is normalized to `gemini-3.1-flash-lite` at runtime because it repeatedly exceeds the production gateway timeout.
+Direct backend mode uses `GEMINI_API_KEY` on the backend to enable the dashboard's AI website generator. `GEMINI_MODEL` defaults to `gemini-3.1-flash-lite`, `GEMINI_THINKING_LEVEL` defaults to `minimal`, and `GEMINI_TIMEOUT_MS` defaults to `12000` so provider latency returns an app-level JSON error with CORS before the reverse proxy emits a headerless `502`. A legacy `GEMINI_MODEL=gemini-3.5-flash` value is normalized to `gemini-3.1-flash-lite` at runtime because it repeatedly exceeds the production gateway timeout.
+
+Production can route only the Gemini provider call through the Vercel frontend to avoid unsupported backend egress regions. Configure the Vercel frontend project with `GEMINI_API_KEY` and a high-entropy `GEMINI_PROXY_TOKEN`, then configure the backend with:
+
+```bash
+GEMINI_PROXY_URL=https://site.spono.tw/api/internal/gemini/interactions
+GEMINI_PROXY_TOKEN=the-same-secret-used-on-vercel
+```
+
+When `GEMINI_PROXY_URL` is present, the backend sends Gemini interactions to the Vercel Route Handler with `Authorization: Bearer GEMINI_PROXY_TOKEN`; the Vercel function injects `GEMINI_API_KEY` and forwards the request to Google from region `iad1`. Keep `GEMINI_API_KEY` on the backend only as a direct-call fallback for local/dev.
+
+Gemini API region checks apply to the backend server's outbound IP, not the user's browser. Deploy the backend in a supported Google AI Gemini API region such as Taiwan, Japan, Singapore, or the United States. If the host egress is in an unsupported region such as Hong Kong, Gemini returns `This API is not available in your current location`; in that case move the backend egress or switch to Gemini Enterprise / Vertex AI.
+
+After signing in, call `GET /api/gemini/diagnostics` to verify the backend's actual outbound IP and Gemini probe result. The response includes `config.mode`, `egress.ip`, and `gemini.regionRestricted` without exposing API keys or proxy tokens. In production proxy mode, `config.mode` should be `proxy`.
 
 The generator runs as an asynchronous job: `POST /api/sites/generate` returns a job id immediately, and the frontend polls `GET /api/generation-jobs/:jobId` until the deployment is ready. This keeps the public request under the gateway timeout even when Gemini latency spikes. Generated output creates a static deployment from two files: `index.html` and `assets/style.css`. Generated output is rejected when it contains script tags, inline event handlers, `javascript:` URLs, forms, iframes, or external CSS/link resources.
 

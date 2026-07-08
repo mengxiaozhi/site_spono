@@ -8,7 +8,7 @@ import { executeResult, isDatabaseOperationalError, isDuplicateEntry, nowIso, pu
 import { ensureDemoData } from "./demo.mjs";
 import { extractStaticSiteZip } from "./storage.mjs";
 import { isValidHostname, normalizeHostname, verifyDomainRecord } from "./domains.mjs";
-import { generateSiteWithGemini, writeGeneratedSiteFiles } from "./gemini-site-generator.mjs";
+import { generateSiteWithGemini, isGeminiUnavailableLocationError, writeGeneratedSiteFiles } from "./gemini-site-generator.mjs";
 
 function asyncRoute(handler) {
   return (req, res, next) => {
@@ -121,6 +121,110 @@ function normalizeGenerationInput(body, fallbackName = "") {
 
 function generatorErrorMessage(error) {
   return String(error?.message || "Gemini 生成失敗").slice(0, 512);
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function readJson(response) {
+  const text = await response.text();
+  if (!text) {
+    return {};
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { raw: text.slice(0, 500) };
+  }
+}
+
+async function getBackendEgressIp() {
+  try {
+    const response = await fetchWithTimeout("https://api.ipify.org?format=json");
+    const data = await readJson(response);
+    return {
+      ok: response.ok,
+      ip: data.ip || null,
+      error: response.ok ? null : data.raw || `HTTP ${response.status}`
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      ip: null,
+      error: error?.name === "AbortError" ? "egress IP lookup timed out" : error?.message || "egress IP lookup failed"
+    };
+  }
+}
+
+async function probeGeminiAccess(config) {
+  const useProxy = Boolean(config.geminiProxyUrl);
+  if (useProxy && !config.geminiProxyToken) {
+    return {
+      ok: false,
+      status: 503,
+      mode: "proxy",
+      regionRestricted: false,
+      error: "Gemini proxy token 尚未設定"
+    };
+  }
+  if (!useProxy && !config.geminiApiKey) {
+    return {
+      ok: false,
+      status: 503,
+      mode: "direct",
+      regionRestricted: false,
+      error: "Gemini API key 尚未設定"
+    };
+  }
+
+  try {
+    const response = await fetchWithTimeout(useProxy ? config.geminiProxyUrl : config.geminiEndpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(useProxy
+          ? { Authorization: `Bearer ${config.geminiProxyToken}` }
+          : { "x-goog-api-key": config.geminiApiKey })
+      },
+      body: JSON.stringify({
+        model: config.geminiModel,
+        store: false,
+        input: "Return OK.",
+        generation_config: {
+          temperature: 0,
+          thinking_level: config.geminiThinkingLevel || "minimal"
+        }
+      })
+    }, 8000);
+    const data = await readJson(response);
+    const error = typeof data?.error === "string" ? data.error : data?.error?.message || null;
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      mode: useProxy ? "proxy" : "direct",
+      regionRestricted: isGeminiUnavailableLocationError(error),
+      error
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      mode: useProxy ? "proxy" : "direct",
+      regionRestricted: false,
+      error: error?.name === "AbortError" ? "Gemini probe timed out" : error?.message || "Gemini probe failed"
+    };
+  }
 }
 
 async function markGenerationJob(db, jobId, status, fields = {}) {
@@ -247,6 +351,24 @@ export function createApiRouter({ db, config, dnsResolver, siteGenerator = gener
       database: "ok",
       generator: {
         model: config.geminiModel,
+        timeoutMs: config.geminiTimeoutMs
+      }
+    });
+  }));
+
+  router.get("/gemini/diagnostics", requireSession, asyncRoute(async (_req, res) => {
+    const [egress, gemini] = await Promise.all([
+      getBackendEgressIp(),
+      probeGeminiAccess(config)
+    ]);
+
+    res.json({
+      egress,
+      gemini,
+      config: {
+        mode: config.geminiProxyUrl ? "proxy" : "direct",
+        model: config.geminiModel,
+        endpointHost: new URL(config.geminiProxyUrl || config.geminiEndpoint).host,
         timeoutMs: config.geminiTimeoutMs
       }
     });
