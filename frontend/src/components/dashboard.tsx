@@ -55,7 +55,6 @@ function BrandLockup({ compact = false }: { compact?: boolean }) {
       {!compact && (
         <div className="brand-copy">
           <span className="brand-title">網站控制台</span>
-          <span className="brand-subtitle">照著做就能發布</span>
         </div>
       )}
     </div>
@@ -64,28 +63,29 @@ function BrandLockup({ compact = false }: { compact?: boolean }) {
 
 function PublishStep({
   action,
-  copy,
-  icon,
   step,
+  state,
   status,
   title
 }: {
   action?: ReactNode;
-  copy: string;
-  icon: ReactNode;
   step: number;
+  state: string;
   status: PublishStepStatus;
   title: string;
 }) {
   return (
-    <div className={`publish-step publish-step-${status}`} aria-current={status === "current" ? "step" : undefined}>
-      <span className="publish-step-number">{status === "done" ? <CheckCircle2 className="h-4 w-4" aria-hidden /> : step}</span>
+    <div
+      className={`publish-step publish-step-${status}`}
+      aria-current={status === "current" ? "step" : undefined}
+      aria-label={`步驟 ${step}: ${title}`}
+    >
+      <span className="publish-step-marker" aria-hidden>
+        {status === "done" ? <CheckCircle2 className="h-4 w-4" aria-hidden /> : null}
+      </span>
       <div className="min-w-0">
-        <div className="publish-step-heading">
-          <span className="publish-step-icon">{icon}</span>
-          <span>{title}</span>
-        </div>
-        <p className="party-section-copy text-sm">{copy}</p>
+        <div className="publish-step-heading">{title}</div>
+        <p className="publish-step-state">{state}</p>
         {action && <div className="mt-3">{action}</div>}
       </div>
     </div>
@@ -138,13 +138,13 @@ function NextStepCard({
 }) {
   return (
     <section className="next-step-dialog" aria-label={`下一步：${title}`}>
-      <span className="next-step-avatar">{icon}</span>
+      <span className="next-step-indicator">{icon}</span>
       <div className="next-step-content">
         <h2 className="party-section-title">{title}</h2>
         <p className="party-section-copy text-sm">{copy}</p>
-        <div className="next-step-actions">
-          <NextStepAction {...action} title={`下一步：${title}`} />
-        </div>
+      </div>
+      <div className="next-step-actions">
+        <NextStepAction {...action} title={`下一步：${title}`} />
       </div>
     </section>
   );
@@ -189,7 +189,12 @@ function StatusText({ status }: { status: Domain["status"] }) {
       ? "row-state-danger"
       : "row-state-warning";
 
-  return <span className={`row-state ${className}`}>{label}</span>;
+  return (
+    <span className={`status-inline row-state ${className}`}>
+      <span className="status-dot" aria-hidden />
+      {label}
+    </span>
+  );
 }
 
 function PrimaryButton({
@@ -505,7 +510,7 @@ function StatBox({
   icon: ReactNode;
   label: string;
   value: string;
-  helper: string;
+  helper?: string;
 }) {
   return (
     <div className="party-stat-box">
@@ -513,7 +518,7 @@ function StatBox({
         <div>
           <p className="party-kicker">{label}</p>
           <strong>{value}</strong>
-          <p className="party-section-copy mt-2 text-sm">{helper}</p>
+          {helper && <p className="party-section-copy mt-2 text-sm">{helper}</p>}
         </div>
         <span className="party-heading-icon">{icon}</span>
       </div>
@@ -994,8 +999,8 @@ export function Dashboard() {
   const nextGuide = !activeSite
     ? {
         step: 1,
-        title: "用 Gemini 生成第一個網站",
-        copy: "按下一步輸入網站名稱、產業與內容需求，Spono 會直接建立專案並部署第一版。",
+        title: "生成第一個網站",
+        copy: "填寫名稱與需求，完成後會建立第一版。",
         icon: <Sparkles className="h-5 w-5" aria-hidden />,
         action: {
           disabled: isBusy,
@@ -1005,8 +1010,8 @@ export function Dashboard() {
     : !hasDeployment
       ? {
           step: 2,
-          title: "用 Gemini 生成第一版",
-          copy: `目前正在設定「${activeSite.name}」。描述網站需求後，Gemini 會生成可預覽的靜態頁面；也可以到部署頁上傳 ZIP。`,
+          title: "生成第一版",
+          copy: `描述「${activeSite.name}」的網站需求，完成後會建立部署版本。`,
           icon: <Sparkles className="h-5 w-5" aria-hidden />,
           action: {
             disabled: isBusy,
@@ -1018,7 +1023,7 @@ export function Dashboard() {
           ? {
               step: 3,
               title: "驗證剛新增的網域",
-              copy: `請先在 DNS 後台把 ${unverifiedDomain.hostname} 的 CNAME 指向 ${cnameTarget}。設定完成後按下一步，Spono 會立即幫你驗證。`,
+              copy: `將 ${unverifiedDomain.hostname} 的 CNAME 指向 ${cnameTarget} 後驗證。`,
               icon: <Globe2 className="h-5 w-5" aria-hidden />,
               action: {
                 disabled: isBusy,
@@ -1031,7 +1036,7 @@ export function Dashboard() {
           : {
               step: 3,
               title: "新增自訂網域",
-              copy: "按下一步填入公開網址，新增後再依照 CNAME target 到 DNS 後台設定。",
+              copy: "填入公開網址，再設定 CNAME target。",
               icon: <Globe2 className="h-5 w-5" aria-hidden />,
               action: {
                 disabled: isBusy,
@@ -1044,7 +1049,7 @@ export function Dashboard() {
         : {
             step: 4,
             title: "打開預覽做最後確認",
-            copy: "部署與網域都已完成。按下一步開啟 Preview，確認畫面沒問題後就能分享連結。",
+            copy: "確認畫面沒問題後即可分享連結。",
             icon: <ExternalLink className="h-5 w-5" aria-hidden />,
             action: {
               href: activeSite.previewUrl
@@ -1072,7 +1077,7 @@ export function Dashboard() {
 
               <div>
                 <h1 className="party-hero-title">從登入開始，一路按下一步發布網站</h1>
-                <p className="party-hero-lead mt-4">每次只處理一件事。登入後 Spono 會用 Gemini 生成第一版，也保留 ZIP 上傳、網域設定與預覽流程。</p>
+                <p className="party-hero-lead mt-4">登入後可生成網站、上傳 ZIP、綁定網域並預覽。</p>
               </div>
             </div>
 
@@ -1081,28 +1086,24 @@ export function Dashboard() {
                 <ShieldCheck className="mt-0.5 h-5 w-5 text-[#0b9ee8]" aria-hidden />
                 <div>
                   <p className="party-list-title">1. 登入或建立帳號</p>
-                  <p className="party-section-copy text-sm">先進入控制台，下一步才會開始建立網站。</p>
                 </div>
               </div>
               <div className="health-row">
                 <Sparkles className="mt-0.5 h-5 w-5 text-[#0b9ee8]" aria-hidden />
                 <div>
                   <p className="party-list-title">2. Gemini 生成第一版</p>
-                  <p className="party-section-copy text-sm">輸入網站名稱、產業與內容需求，系統會自動建立 deployment。</p>
                 </div>
               </div>
               <div className="health-row">
                 <Upload className="mt-0.5 h-5 w-5 text-[#0b9ee8]" aria-hidden />
                 <div>
                   <p className="party-list-title">3. 需要時上傳 ZIP</p>
-                  <p className="party-section-copy text-sm">已有網站檔案時，也能維持原本手動上傳流程。</p>
                 </div>
               </div>
               <div className="health-row">
                 <Globe2 className="mt-0.5 h-5 w-5 text-[#0b9ee8]" aria-hidden />
                 <div>
                   <p className="party-list-title">4. 綁定網域並預覽</p>
-                  <p className="party-section-copy text-sm">設定 DNS、完成驗證，再打開 Preview 做最後確認。</p>
                 </div>
               </div>
             </div>
@@ -1242,8 +1243,8 @@ export function Dashboard() {
           {!activeSite ? (
             <section className="party-hero-card split" data-animate="tab-panel">
               <div className="space-y-4">
-                <h1 className="party-hero-title">用 Gemini 生成或建立網站專案</h1>
-                <p className="party-hero-lead">輸入網站需求後，Spono 會自動建立專案並部署第一版；也可以先建立空專案，再手動上傳 ZIP。</p>
+                <h1 className="party-hero-title">建立網站專案</h1>
+                <p className="party-hero-lead">用 Gemini 生成第一版，或先建立空專案。</p>
                 <div className="row-actions justify-start">
                   <NextStepAction {...nextGuide.action} title={`下一步：${nextGuide.title}`} />
                   <SecondaryButton onClick={() => setPanelMode("create-site")} disabled={isBusy}>
@@ -1271,7 +1272,8 @@ export function Dashboard() {
                     <div className="min-w-0">
                       <div className="site-title-stack">
                         <h1 className="party-hero-title truncate">{activeSite.name}</h1>
-                        <span className={`site-state-text ${activeDeployment ? "site-state-ok" : "site-state-warning"}`}>
+                        <span className={`status-inline site-state-text ${activeDeployment ? "site-state-ok" : "site-state-warning"}`}>
+                          <span className="status-dot" aria-hidden />
                           {activeDeployment ? "已上線" : "待上傳"}
                         </span>
                       </div>
@@ -1310,8 +1312,7 @@ export function Dashboard() {
                   </div>
                   <div className="site-status-list">
                     <span>{completedGuideSteps} / {guideTotal} 已完成</span>
-                    <span>{activeDeployment ? `正在使用 v${activeDeployment.version}` : "還沒有版本"}</span>
-                    <span>{hasVerifiedDomain ? `${verifiedDomains} 個網域已驗證` : "網域還沒完成"}</span>
+                    <span>{activeDeployment ? `v${activeDeployment.version}` : "尚無版本"} · {hasVerifiedDomain ? `${verifiedDomains} 個網域已驗證` : "待綁定網域"}</span>
                   </div>
                 </div>
               </section>
@@ -1335,8 +1336,7 @@ export function Dashboard() {
                   <section className="guide-panel">
                     <div className="workbench-heading">
                       <div>
-                        <h2 className="party-section-title">一次只做一個決定</h2>
-                        <p className="party-section-copy mt-2 text-sm">主要操作都從這張對話卡開始，完成後會自動切到下一個步驟。</p>
+                        <h2 className="party-section-title">發布流程</h2>
                       </div>
                     </div>
 
@@ -1351,16 +1351,14 @@ export function Dashboard() {
                       <PublishStep
                         step={1}
                         status="done"
-                        icon={<FolderKanban className="h-4 w-4" aria-hidden />}
                         title="建立或選擇網站"
-                        copy={`正在操作「${activeSite.name}」，之後的下一步都會套用到這個專案。`}
+                        state={activeSite.name}
                       />
                       <PublishStep
                         step={2}
                         status={stepStatus(hasDeployment, currentGuideStep === 2)}
-                        icon={<Sparkles className="h-4 w-4" aria-hidden />}
                         title="生成或上傳第一版"
-                        copy={hasDeployment ? `目前使用 v${activeDeployment?.version}，可以隨時用 Gemini 生成新版或上傳 ZIP。` : "描述需求讓 Gemini 生成靜態網站；也可以在部署頁改用 ZIP 上傳。"}
+                        state={hasDeployment ? `使用 v${activeDeployment?.version}` : "待部署"}
                         action={!hasDeployment ? (
                           <NextStepAction {...nextGuide.action} title={`下一步：${nextGuide.title}`} />
                         ) : undefined}
@@ -1368,9 +1366,8 @@ export function Dashboard() {
                       <PublishStep
                         step={3}
                         status={stepStatus(hasVerifiedDomain, currentGuideStep === 3)}
-                        icon={<Globe2 className="h-4 w-4" aria-hidden />}
                         title="綁定網域"
-                        copy={hasVerifiedDomain ? `${verifiedDomains} 個網域已可使用。` : "把自己的網域加進來，再依照 CNAME target 設定 DNS。"}
+                        state={hasVerifiedDomain ? `${verifiedDomains} 個已驗證` : "待設定 CNAME"}
                         action={hasDeployment && !hasVerifiedDomain ? (
                           <NextStepAction {...nextGuide.action} title={`下一步：${nextGuide.title}`} />
                         ) : undefined}
@@ -1378,9 +1375,8 @@ export function Dashboard() {
                       <PublishStep
                         step={4}
                         status={!hasDeployment || !hasVerifiedDomain ? "todo" : "current"}
-                        icon={<ExternalLink className="h-4 w-4" aria-hidden />}
                         title="開啟預覽"
-                        copy={!hasDeployment ? "先完成上傳，這裡就會出現可開啟的預覽。" : hasVerifiedDomain ? "打開預覽檢查畫面；沒問題就能分享連結。" : "先把網域綁好，最後再確認公開畫面。"}
+                        state={!hasDeployment ? "待部署" : hasVerifiedDomain ? "可確認" : "待網域"}
                         action={hasDeployment && hasVerifiedDomain ? (
                           <NextStepAction {...nextGuide.action} title={`下一步：${nextGuide.title}`} />
                         ) : undefined}
@@ -1390,19 +1386,18 @@ export function Dashboard() {
 
                   <aside className="quick-summary-panel">
                     <div>
-                      <h2 className="party-section-title">這個網站現在如何？</h2>
+                      <h2 className="party-section-title">網站概況</h2>
                     </div>
 
                     <div className="summary-list">
-                      <StatBox icon={<Activity className="h-5 w-5" aria-hidden />} label="部署版本" value={`${deployments.length}`} helper={activeDeployment ? `現在對外顯示 v${activeDeployment.version}` : "還沒上傳任何版本"} />
-                      <StatBox icon={<Globe2 className="h-5 w-5" aria-hidden />} label="已驗證網域" value={`${verifiedDomains}`} helper={`${domains.length} 個網域設定`} />
-                      <StatBox icon={<Clock3 className="h-5 w-5" aria-hidden />} label="最後更新" value={shortDate(activeSite.updatedAt)} helper="專案最近一次變更" />
+                      <StatBox icon={<Activity className="h-5 w-5" aria-hidden />} label="部署版本" value={`${deployments.length}`} helper={activeDeployment ? `使用 v${activeDeployment.version}` : undefined} />
+                      <StatBox icon={<Globe2 className="h-5 w-5" aria-hidden />} label="已驗證網域" value={`${verifiedDomains}`} helper={domains.length ? `共 ${domains.length} 個` : undefined} />
+                      <StatBox icon={<Clock3 className="h-5 w-5" aria-hidden />} label="最後更新" value={shortDate(activeSite.updatedAt)} />
                     </div>
 
                     <div className="cname-helper">
                       <p className="party-list-title">CNAME target</p>
-                      <p className="party-section-copy text-sm">DNS 後台只需要把 CNAME 指向這串文字。</p>
-                      <div className="code-pill mt-3">
+                      <div className="code-row mt-3">
                         <code className="truncate font-mono text-sm text-slate-700">{cnameTarget}</code>
                         <IconButton label="複製 CNAME target" onClick={() => void copyText(cnameTarget, "CNAME target 已複製")}>
                           <Copy className="h-4 w-4" aria-hidden />
@@ -1419,8 +1414,7 @@ export function Dashboard() {
                     <div className="party-heading">
                       <span className="party-heading-icon"><Upload className="h-5 w-5" aria-hidden /></span>
                       <div>
-                        <h2 className="party-section-title">每次上傳都會留一版</h2>
-                        <p className="party-section-copy mt-1 text-sm">上傳錯了也不用怕，可以回到之前的版本。</p>
+                        <h2 className="party-section-title">部署版本</h2>
                       </div>
                     </div>
                     <div className="row-actions justify-start">
@@ -1437,7 +1431,7 @@ export function Dashboard() {
 
                   <div className="mt-5 grid gap-3">
                     {deployments.length === 0 ? (
-                      <EmptyState title="尚無部署" copy="用 Gemini 生成第一版，或上傳包含根目錄 index.html 的 zip 建立第一個 deployment。" />
+                      <EmptyState title="尚無部署" copy="用 Gemini 生成，或上傳包含 index.html 的 ZIP。" />
                     ) : deployments.map((deployment) => (
                       <div key={deployment.id} className="deployment-row">
                         <div className="min-w-0">
@@ -1448,7 +1442,10 @@ export function Dashboard() {
                           <p className="party-section-copy text-sm">{deployment.fileCount} 個檔案 · {formatBytes(deployment.totalBytes)} · {dateTime(deployment.createdAt)}</p>
                         </div>
                         {deployment.id === activeSite.activeDeploymentId ? (
-                          <span className="row-state row-state-ok">目前上線</span>
+                          <span className="status-inline row-state row-state-ok">
+                            <span className="status-dot" aria-hidden />
+                            目前上線
+                          </span>
                         ) : (
                           <SecondaryButton onClick={() => void handleActivate(deployment.id)} disabled={isBusy}>
                             <RotateCcw className="h-4 w-4" aria-hidden />
@@ -1467,8 +1464,7 @@ export function Dashboard() {
                     <div className="party-heading">
                       <span className="party-heading-icon"><Globe2 className="h-5 w-5" aria-hidden /></span>
                       <div>
-                        <h2 className="party-section-title">把自己的網址接上來</h2>
-                        <p className="party-section-copy mt-1 text-sm">新增網域後，照著下方 target 去 DNS 後台設定 CNAME。</p>
+                        <h2 className="party-section-title">網域</h2>
                       </div>
                     </div>
                     <PrimaryButton onClick={() => setPanelMode("add-domain")} disabled={isBusy}>
@@ -1477,7 +1473,7 @@ export function Dashboard() {
                     </PrimaryButton>
                   </div>
 
-                  <div className="code-pill mt-5">
+                  <div className="code-row mt-5">
                     <code className="truncate font-mono text-sm text-slate-700">{cnameTarget}</code>
                     <IconButton label="複製 CNAME target" onClick={() => void copyText(cnameTarget, "CNAME target 已複製")}>
                       <Copy className="h-4 w-4" aria-hidden />
@@ -1485,17 +1481,12 @@ export function Dashboard() {
                   </div>
 
                   <div className="domain-guide">
-                    <p className="party-list-title">照這三步做</p>
-                    <ol>
-                      <li>在 DNS 後台新增一筆 CNAME。</li>
-                      <li>把值指向上面的 target。</li>
-                      <li>回到總覽按「下一步」驗證，或在下方網域列直接驗證。</li>
-                    </ol>
+                    在 DNS 後台新增 CNAME，值指向上方 target，生效後回來驗證。
                   </div>
 
                   <div className="mt-5 grid gap-3">
                     {domains.length === 0 ? (
-                      <EmptyState title="尚無自訂網域" copy={`新增網域後，將 CNAME 指向 ${cnameTarget}，再執行驗證。`} />
+                      <EmptyState title="尚無自訂網域" copy={`新增後將 CNAME 指向 ${cnameTarget}。`} />
                     ) : domains.map((domain) => (
                       <div key={domain.id} className="domain-row">
                         <div className="min-w-0">
@@ -1526,8 +1517,7 @@ export function Dashboard() {
                       <div className="party-heading">
                         <span className="party-heading-icon"><Settings className="h-5 w-5" aria-hidden /></span>
                         <div>
-                          <h2 className="party-section-title">名稱與危險操作</h2>
-                          <p className="party-section-copy mt-1 text-sm">一般只需要重新命名；刪除會再跳確認視窗。</p>
+                          <h2 className="party-section-title">設定</h2>
                         </div>
                       </div>
                     </div>
@@ -1572,15 +1562,11 @@ export function Dashboard() {
         id="create-site-drawer"
         open={panelMode === "create-site"}
         title="建立網站"
-        description="這一步只需要命名網站。按下一步後會建立空專案，並回到總覽繼續生成第一版或上傳 ZIP。"
+        description="命名網站後會建立空專案。"
         disabled={isBusy}
         onClose={closePanel}
       >
         <form className="party-form-grid" onSubmit={handleCreateSite}>
-          <div className="drawer-guide">
-            <p className="party-list-title">先取一個好認的名字</p>
-            <p className="party-section-copy text-sm">例如公司官網、活動頁、作品集。下一步會建立專案，之後還能再改名。</p>
-          </div>
           <TextInput id="site-name" label="網站名稱" value={siteName} onChange={setSiteName} placeholder="marketing-site" required />
           <PrimaryButton type="submit" disabled={isBusy}>
             {isBusy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
@@ -1594,14 +1580,13 @@ export function Dashboard() {
         id="generate-site-drawer"
         open={panelMode === "generate-site"}
         title={activeSite ? (hasDeployment ? "用 Gemini 生成新版" : "用 Gemini 生成第一版") : "用 Gemini 生成網站"}
-        description={activeSite ? `這一步只需要描述網站需求。按下一步後，Gemini 會為「${activeSite.name}」生成部署版本並設為 active。` : "這一步只需要描述網站需求。按下一步後，Gemini 會生成靜態網站並自動建立第一個 deployment。"}
+        description={activeSite ? `描述需求後會為「${activeSite.name}」建立部署版本。` : "描述需求後會建立網站與第一個部署版本。"}
         disabled={isBusy}
         onClose={closePanel}
       >
         <form className="party-form-grid" onSubmit={handleGenerateSite}>
           <div className="drawer-guide">
-            <p className="party-list-title">{activeSite ? "會覆蓋目前對外版本" : "會建立新網站專案"}</p>
-            <p className="party-section-copy text-sm">生成內容會被限制為 HTML 與 CSS，不接受 script 或外部嵌入資源。</p>
+            輸出限制：HTML/CSS，不包含 script 或外部嵌入資源。
           </div>
           {activeSite ? (
             <div className="generation-target">
@@ -1636,14 +1621,13 @@ export function Dashboard() {
         id="upload-drawer"
         open={panelMode === "upload" && Boolean(activeSite)}
         title="上傳新版本"
-        description="這一步只需要選擇 ZIP。按下一步後會建立 deployment 並自動設為 active。"
+        description="選擇 ZIP 後會建立部署版本。"
         disabled={isBusy}
         onClose={closePanel}
       >
         <form className="party-form-grid" onSubmit={handleUpload}>
           <div className="drawer-guide">
-            <p className="party-list-title">ZIP 裡面要有 index.html</p>
-            <p className="party-section-copy text-sm">如果網站檔案放在資料夾裡，請先進到資料夾內再打包。下一步會上傳並建立版本。</p>
+            ZIP 需包含 index.html；網站檔案請放在 ZIP 根目錄。
           </div>
           <label className="grid gap-2" htmlFor="deployment-zip">
             <span className="field-label">部署 zip</span>
@@ -1668,14 +1652,13 @@ export function Dashboard() {
         id="add-domain-drawer"
         open={panelMode === "add-domain" && Boolean(activeSite)}
         title="新增網域"
-        description={`這一步只需要填公開網址。下一步會新增網域，接著引導你把 DNS CNAME 指向 ${cnameTarget}。`}
+        description="填入公開網址後再設定 CNAME。"
         disabled={isBusy}
         onClose={closePanel}
       >
         <form className="party-form-grid" onSubmit={handleAddDomain}>
           <div className="drawer-guide">
-            <p className="party-list-title">先填你的公開網址</p>
-            <p className="party-section-copy text-sm">新增後回到總覽，下一步會帶你設定 DNS 並驗證：{cnameTarget}</p>
+            CNAME target：{cnameTarget}
           </div>
           <TextInput id="domain-name" label="自訂網域" value={domainName} onChange={setDomainName} placeholder="www.example.com" required />
           <PrimaryButton type="submit" disabled={isBusy || !domainName}>
@@ -1690,7 +1673,7 @@ export function Dashboard() {
         id="rename-site-drawer"
         open={panelMode === "rename-site" && Boolean(activeSite)}
         title="重新命名網站"
-        description="只更新控制台中的網站名稱，不會改變既有 slug、部署或網域。"
+        description="只更新控制台名稱，不改變 slug、部署或網域。"
         disabled={isBusy}
         onClose={closePanel}
       >
