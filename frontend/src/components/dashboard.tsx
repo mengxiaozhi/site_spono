@@ -1,18 +1,19 @@
 "use client";
 
 import {
-  Activity,
   AlertCircle,
+  Bell,
+  BookOpen,
   CheckCircle2,
   ChevronRight,
-  Clock3,
+  CircleHelp,
   Copy,
   ExternalLink,
-  FolderKanban,
   Globe2,
   LayoutDashboard,
   Loader2,
   LogOut,
+  MoreVertical,
   MonitorPlay,
   Pencil,
   Plus,
@@ -996,65 +997,12 @@ export function Dashboard() {
     }
   }
 
-  const nextGuide = !activeSite
-    ? {
-        step: 1,
-        title: "生成第一個網站",
-        copy: "填寫名稱與需求，完成後會建立第一版。",
-        icon: <Sparkles className="h-5 w-5" aria-hidden />,
-        action: {
-          disabled: isBusy,
-          onNext: openGeneratePanel
-        }
-      }
-    : !hasDeployment
-      ? {
-          step: 2,
-          title: "生成第一版",
-          copy: `描述「${activeSite.name}」的網站需求，完成後會建立部署版本。`,
-          icon: <Sparkles className="h-5 w-5" aria-hidden />,
-          action: {
-            disabled: isBusy,
-            onNext: openGeneratePanel
-          }
-        }
-      : !hasVerifiedDomain
-        ? unverifiedDomain
-          ? {
-              step: 3,
-              title: "驗證剛新增的網域",
-              copy: `將 ${unverifiedDomain.hostname} 的 CNAME 指向 ${cnameTarget} 後驗證。`,
-              icon: <Globe2 className="h-5 w-5" aria-hidden />,
-              action: {
-                disabled: isBusy,
-                onNext: () => {
-                  setActiveTab("domains");
-                  void handleVerifyDomain(unverifiedDomain.id);
-                }
-              }
-            }
-          : {
-              step: 3,
-              title: "新增自訂網域",
-              copy: "填入公開網址，再設定 CNAME target。",
-              icon: <Globe2 className="h-5 w-5" aria-hidden />,
-              action: {
-                disabled: isBusy,
-                onNext: () => {
-                  setActiveTab("domains");
-                  setPanelMode("add-domain");
-                }
-              }
-            }
-        : {
-            step: 4,
-            title: "打開預覽做最後確認",
-            copy: "確認畫面沒問題後即可分享連結。",
-            icon: <ExternalLink className="h-5 w-5" aria-hidden />,
-            action: {
-              href: activeSite.previewUrl
-            }
-          };
+  const workflowSteps = [
+    { key: "site", label: "建立網站", status: activeSite ? "done" : "current" },
+    { key: "deploy", label: "部署版本", status: stepStatus(hasDeployment, currentGuideStep === 2) },
+    { key: "domain", label: "綁定網域", status: stepStatus(hasVerifiedDomain, currentGuideStep === 3) },
+    { key: "preview", label: "完成", status: hasDeployment && hasVerifiedDomain ? "current" : "todo" }
+  ] satisfies Array<{ key: string; label: string; status: PublishStepStatus }>;
 
   if (isBooting) {
     return (
@@ -1159,7 +1107,7 @@ export function Dashboard() {
   }
 
   return (
-    <main ref={rootRef} className="app-shell pb-8">
+    <main ref={rootRef} className="app-shell">
       <header className="top-chrome" data-animate="intro">
         <div className="top-chrome-inner min-h-[72px] px-4 lg:px-8">
           <BrandLockup />
@@ -1177,6 +1125,19 @@ export function Dashboard() {
             ))}
           </nav>
           <div className="top-actions">
+            <a className="utility-link hidden md:inline-flex" href={activeSite?.previewUrl ?? "#"} onClick={(event) => {
+              if (!activeSite) event.preventDefault();
+            }} target="_blank" rel="noreferrer">
+              <BookOpen className="h-4 w-4" aria-hidden />
+              文件
+            </a>
+            <span className="utility-link hidden md:inline-flex">
+              <CircleHelp className="h-4 w-4" aria-hidden />
+              幫助
+            </span>
+            <IconButton label="通知">
+              <Bell className="h-4 w-4" aria-hidden />
+            </IconButton>
             <span className="user-chip">{user.email.charAt(0).toUpperCase()}</span>
             <IconButton label="重新整理" onClick={() => void bootstrap()} disabled={isBusy}>
               <RefreshCw className="h-4 w-4" aria-hidden />
@@ -1191,21 +1152,12 @@ export function Dashboard() {
       <div className="dashboard-shell">
         <aside className="project-rail" data-animate="intro">
           <div className="project-rail-header">
-            <div className="party-heading">
-              <span className="party-heading-icon">
-                <FolderKanban className="h-5 w-5" aria-hidden />
-              </span>
-              <div>
-                <h2 className="party-section-title">我的網站</h2>
-              </div>
-            </div>
+            <h2 className="rail-title">我的網站</h2>
             <div className="rail-header-actions">
-              <IconButton label="AI 生成網站" onClick={openGeneratePanel} disabled={isBusy}>
-                <Sparkles className="h-4 w-4" aria-hidden />
-              </IconButton>
-              <IconButton label="建立網站" onClick={() => setPanelMode("create-site")} disabled={isBusy}>
+              <button type="button" className="rail-create-button" onClick={() => setPanelMode("create-site")} disabled={isBusy}>
                 <Plus className="h-4 w-4" aria-hidden />
-              </IconButton>
+                新增網站
+              </button>
             </div>
           </div>
 
@@ -1221,11 +1173,11 @@ export function Dashboard() {
                 }}
                 className={`project-list-button ${activeSite?.id === site.id ? "project-list-button-active" : ""}`}
               >
+                <MonitorPlay className="h-4 w-4 shrink-0" aria-hidden />
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">{site.name}</span>
-                  <span className="mt-1 block truncate font-mono text-xs opacity-70">/{site.slug}</span>
                 </span>
-                <ChevronRight className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                <span className={`project-dot ${site.activeDeploymentId ? "project-dot-live" : ""}`} aria-hidden />
               </button>
             ))}
           </div>
@@ -1241,30 +1193,26 @@ export function Dashboard() {
           )}
 
           {!activeSite ? (
-            <section className="party-hero-card split" data-animate="tab-panel">
-              <div className="space-y-4">
+            <section className="empty-workbench" data-animate="tab-panel">
+              <div>
                 <h1 className="party-hero-title">建立網站專案</h1>
-                <p className="party-hero-lead">用 Gemini 生成第一版，或先建立空專案。</p>
-                <div className="row-actions justify-start">
-                  <NextStepAction {...nextGuide.action} title={`下一步：${nextGuide.title}`} />
+                <p className="party-hero-lead mt-3">用 Gemini 生成第一版，或先建立空專案。</p>
+                <div className="row-actions justify-start mt-6">
+                  <PrimaryButton onClick={openGeneratePanel} disabled={isBusy}>
+                    <Sparkles className="h-4 w-4" aria-hidden />
+                    AI 生成
+                  </PrimaryButton>
                   <SecondaryButton onClick={() => setPanelMode("create-site")} disabled={isBusy}>
                     <Plus className="h-4 w-4" aria-hidden />
-                    建立空專案
+                    新增網站
                   </SecondaryButton>
                 </div>
               </div>
-              <NextStepCard
-                title={nextGuide.title}
-                copy={nextGuide.copy}
-                icon={nextGuide.icon}
-                action={nextGuide.action}
-              />
             </section>
           ) : (
             <>
-              <section className="site-hero" data-animate="intro">
-                <div className="site-hero-main">
-                  <p className="site-slug">/{activeSite.slug}</p>
+              <section className="site-command-bar" data-animate="intro">
+                <div className="site-command-main">
                   <div className="site-title-row">
                     <span className="site-icon">
                       <MonitorPlay className="h-7 w-7" aria-hidden />
@@ -1272,7 +1220,7 @@ export function Dashboard() {
                     <div className="min-w-0">
                       <div className="site-title-stack">
                         <h1 className="party-hero-title truncate">{activeSite.name}</h1>
-                        <span className={`status-inline site-state-text ${activeDeployment ? "site-state-ok" : "site-state-warning"}`}>
+                        <span className={`site-state-text ${activeDeployment ? "site-state-ok" : "site-state-warning"}`}>
                           <span className="status-dot" aria-hidden />
                           {activeDeployment ? "已上線" : "待上傳"}
                         </span>
@@ -1283,39 +1231,46 @@ export function Dashboard() {
                       </a>
                     </div>
                   </div>
-                  <div className="row-actions justify-start">
-                    <NextStepAction {...nextGuide.action} title={`下一步：${nextGuide.title}`} />
-                    <SecondaryButton onClick={() => void copyText(activeSite.previewUrl, "Preview URL 已複製")}>
-                      <Copy className="h-4 w-4" aria-hidden />
-                      複製 URL
-                    </SecondaryButton>
-                    <SecondaryButton onClick={openGeneratePanel} disabled={isBusy}>
-                      <Sparkles className="h-4 w-4" aria-hidden />
-                      AI 生成新版
-                    </SecondaryButton>
-                    <SecondaryButton onClick={() => setPanelMode("upload")} disabled={isBusy}>
-                      <Upload className="h-4 w-4" aria-hidden />
-                      上傳新版
-                    </SecondaryButton>
+
+                  <div className="site-meta-row">
+                    <span>版本 {activeDeployment ? `v${activeDeployment.version}` : "-"}</span>
+                    <span>最新部署 {activeDeployment ? dateTime(activeDeployment.createdAt) : "-"}</span>
+                    <span>網站大小 {activeDeployment ? formatBytes(activeDeployment.totalBytes) : "-"}</span>
                   </div>
                 </div>
 
-                <div className="site-status-panel">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="site-status-heading">下一步</p>
-                      <p className="site-status-title">{nextGuide.title}</p>
-                    </div>
-                  </div>
-                  <div className="spono-progress" aria-label={`完成進度 ${completedGuideSteps} / ${guideTotal}`}>
-                    <span style={{ width: `${(completedGuideSteps / guideTotal) * 100}%` }} />
-                  </div>
-                  <div className="site-status-list">
-                    <span>{completedGuideSteps} / {guideTotal} 已完成</span>
-                    <span>{activeDeployment ? `v${activeDeployment.version}` : "尚無版本"} · {hasVerifiedDomain ? `${verifiedDomains} 個網域已驗證` : "待綁定網域"}</span>
-                  </div>
+                <div className="site-command-actions">
+                  <PrimaryButton onClick={openGeneratePanel} disabled={isBusy}>
+                    <Sparkles className="h-4 w-4" aria-hidden />
+                    AI 生成
+                  </PrimaryButton>
+                  <SecondaryButton onClick={() => setPanelMode("upload")} disabled={isBusy}>
+                    <Upload className="h-4 w-4" aria-hidden />
+                    上傳 ZIP
+                  </SecondaryButton>
+                  <a href={activeSite.previewUrl} target="_blank" rel="noreferrer" className="btn-secondary">
+                    <ExternalLink className="h-4 w-4" aria-hidden />
+                    開啟預覽
+                  </a>
+                  <IconButton label="複製 Preview URL" onClick={() => void copyText(activeSite.previewUrl, "Preview URL 已複製")}>
+                    <Copy className="h-4 w-4" aria-hidden />
+                  </IconButton>
+                  <IconButton label="更多操作">
+                    <MoreVertical className="h-4 w-4" aria-hidden />
+                  </IconButton>
                 </div>
               </section>
+
+              <nav className="workflow-line" aria-label={`完成進度 ${completedGuideSteps} / ${guideTotal}`} data-animate="intro">
+                {workflowSteps.map((step) => (
+                  <div key={step.key} className={`workflow-step workflow-step-${step.status}`}>
+                    <span className="workflow-marker" aria-hidden>
+                      {step.status === "done" ? <CheckCircle2 className="h-4 w-4" aria-hidden /> : null}
+                    </span>
+                    <span>{step.label}</span>
+                  </div>
+                ))}
+              </nav>
 
               <div className="mobile-tab-strip lg:hidden" data-animate="intro">
                 {tabs.map((tab) => (
@@ -1332,178 +1287,198 @@ export function Dashboard() {
               </div>
 
               {activeTab === "overview" && (
-                <section className="overview-grid" data-animate="tab-panel">
-                  <section className="guide-panel">
-                    <div className="workbench-heading">
-                      <div>
-                        <h2 className="party-section-title">發布流程</h2>
+                <section className="operations-grid" data-animate="tab-panel">
+                  <section className="operations-panel deployments-panel">
+                    <div className="section-toolbar">
+                      <h2 className="party-section-title">部署紀錄</h2>
+                      <button type="button" className="text-action" onClick={() => setActiveTab("deployments")}>
+                        查看所有版本
+                        <ChevronRight className="h-4 w-4" aria-hidden />
+                      </button>
+                    </div>
+
+                    {deployments.length === 0 ? (
+                      <EmptyState title="尚無部署" copy="用 Gemini 生成，或上傳包含 index.html 的 ZIP。" />
+                    ) : (
+                      <div className="data-table deployment-table">
+                        <div className="data-table-head">
+                          <span>版本</span>
+                          <span>部署時間</span>
+                          <span>來源</span>
+                          <span>大小</span>
+                          <span>操作</span>
+                        </div>
+                        {deployments.map((deployment) => (
+                          <div key={deployment.id} className="data-table-row">
+                            <span className="row-version">v{deployment.version}</span>
+                            <span>{dateTime(deployment.createdAt)}</span>
+                            <span>{deployment.originalName.toLowerCase().includes("gemini") ? "AI 生成" : "上傳 ZIP"}</span>
+                            <span>{formatBytes(deployment.totalBytes)}</span>
+                            <span className="table-actions">
+                              {deployment.id === activeSite.activeDeploymentId ? (
+                                <span className="row-state row-state-ok">
+                                  <span className="status-dot" aria-hidden />
+                                  目前上線
+                                </span>
+                              ) : (
+                                <button type="button" className="text-action" onClick={() => void handleActivate(deployment.id)} disabled={isBusy}>
+                                  回滾
+                                </button>
+                              )}
+                              <IconButton label={`v${deployment.version} 更多操作`}>
+                                <MoreVertical className="h-4 w-4" aria-hidden />
+                              </IconButton>
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                    </div>
-
-                    <NextStepCard
-                      title={nextGuide.title}
-                      copy={nextGuide.copy}
-                      icon={nextGuide.icon}
-                      action={nextGuide.action}
-                    />
-
-                    <div className="publish-track">
-                      <PublishStep
-                        step={1}
-                        status="done"
-                        title="建立或選擇網站"
-                        state={activeSite.name}
-                      />
-                      <PublishStep
-                        step={2}
-                        status={stepStatus(hasDeployment, currentGuideStep === 2)}
-                        title="生成或上傳第一版"
-                        state={hasDeployment ? `使用 v${activeDeployment?.version}` : "待部署"}
-                        action={!hasDeployment ? (
-                          <NextStepAction {...nextGuide.action} title={`下一步：${nextGuide.title}`} />
-                        ) : undefined}
-                      />
-                      <PublishStep
-                        step={3}
-                        status={stepStatus(hasVerifiedDomain, currentGuideStep === 3)}
-                        title="綁定網域"
-                        state={hasVerifiedDomain ? `${verifiedDomains} 個已驗證` : "待設定 CNAME"}
-                        action={hasDeployment && !hasVerifiedDomain ? (
-                          <NextStepAction {...nextGuide.action} title={`下一步：${nextGuide.title}`} />
-                        ) : undefined}
-                      />
-                      <PublishStep
-                        step={4}
-                        status={!hasDeployment || !hasVerifiedDomain ? "todo" : "current"}
-                        title="開啟預覽"
-                        state={!hasDeployment ? "待部署" : hasVerifiedDomain ? "可確認" : "待網域"}
-                        action={hasDeployment && hasVerifiedDomain ? (
-                          <NextStepAction {...nextGuide.action} title={`下一步：${nextGuide.title}`} />
-                        ) : undefined}
-                      />
-                    </div>
+                    )}
                   </section>
 
-                  <aside className="quick-summary-panel">
-                    <div>
-                      <h2 className="party-section-title">網站概況</h2>
+                  <aside className="operations-panel domain-panel">
+                    <div className="section-toolbar">
+                      <h2 className="party-section-title">網域設定</h2>
+                      <button type="button" className="text-action" onClick={() => setPanelMode("add-domain")} disabled={isBusy}>
+                        新增網域
+                      </button>
                     </div>
 
-                    <div className="summary-list">
-                      <StatBox icon={<Activity className="h-5 w-5" aria-hidden />} label="部署版本" value={`${deployments.length}`} helper={activeDeployment ? `使用 v${activeDeployment.version}` : undefined} />
-                      <StatBox icon={<Globe2 className="h-5 w-5" aria-hidden />} label="已驗證網域" value={`${verifiedDomains}`} helper={domains.length ? `共 ${domains.length} 個` : undefined} />
-                      <StatBox icon={<Clock3 className="h-5 w-5" aria-hidden />} label="最後更新" value={shortDate(activeSite.updatedAt)} />
-                    </div>
-
-                    <div className="cname-helper">
-                      <p className="party-list-title">CNAME target</p>
-                      <div className="code-row mt-3">
-                        <code className="truncate font-mono text-sm text-slate-700">{cnameTarget}</code>
+                    <div className="domain-target">
+                      <span className="field-label">CNAME 目標</span>
+                      <div className="code-row">
+                        <code className="truncate font-mono text-sm">{cnameTarget}</code>
                         <IconButton label="複製 CNAME target" onClick={() => void copyText(cnameTarget, "CNAME target 已複製")}>
                           <Copy className="h-4 w-4" aria-hidden />
                         </IconButton>
                       </div>
+                    </div>
+
+                    <div className="domain-list">
+                      <div className="domain-list-heading">已綁定網域</div>
+                      {domains.length === 0 ? (
+                        <p className="party-section-copy text-sm">尚未綁定任何網域</p>
+                      ) : domains.map((domain) => (
+                        <div key={domain.id} className="domain-line">
+                          <div className="min-w-0">
+                            <p className="party-list-title truncate">{domain.hostname}</p>
+                            <p className="party-section-copy text-xs">最後驗證 {shortDate(domain.lastCheckedAt)}</p>
+                            {domain.lastError && <p className="mt-1 text-sm text-[#b3261e]">{domain.lastError}</p>}
+                          </div>
+                          <StatusText status={domain.status} />
+                          <IconButton label={`驗證 ${domain.hostname}`} onClick={() => void handleVerifyDomain(domain.id)} disabled={isBusy}>
+                            <ExternalLink className="h-4 w-4" aria-hidden />
+                          </IconButton>
+                          <IconButton label={`移除 ${domain.hostname}`} onClick={() => setDomainPendingDelete(domain)} disabled={isBusy}>
+                            <Trash2 className="h-4 w-4" aria-hidden />
+                          </IconButton>
+                        </div>
+                      ))}
                     </div>
                   </aside>
                 </section>
               )}
 
               {activeTab === "deployments" && (
-                <section className="party-section-card" data-animate="tab-panel">
+                <section className="operations-panel" data-animate="tab-panel">
                   <div className="section-toolbar">
-                    <div className="party-heading">
-                      <span className="party-heading-icon"><Upload className="h-5 w-5" aria-hidden /></span>
-                      <div>
-                        <h2 className="party-section-title">部署版本</h2>
-                      </div>
-                    </div>
+                    <h2 className="party-section-title">部署紀錄</h2>
                     <div className="row-actions justify-start">
                       <PrimaryButton onClick={openGeneratePanel} disabled={isBusy}>
                         <Sparkles className="h-4 w-4" aria-hidden />
-                        AI 生成新版
+                        AI 生成
                       </PrimaryButton>
                       <SecondaryButton onClick={() => setPanelMode("upload")} disabled={isBusy}>
                         <Upload className="h-4 w-4" aria-hidden />
-                        上傳新版
+                        上傳 ZIP
                       </SecondaryButton>
                     </div>
                   </div>
 
-                  <div className="mt-5 grid gap-3">
-                    {deployments.length === 0 ? (
-                      <EmptyState title="尚無部署" copy="用 Gemini 生成，或上傳包含 index.html 的 ZIP。" />
-                    ) : deployments.map((deployment) => (
-                      <div key={deployment.id} className="deployment-row">
-                        <div className="min-w-0">
-                          <div className="deployment-title-row">
-                            <span className="row-version">v{deployment.version}</span>
-                            <p className="party-list-title truncate">{deployment.originalName}</p>
-                          </div>
-                          <p className="party-section-copy text-sm">{deployment.fileCount} 個檔案 · {formatBytes(deployment.totalBytes)} · {dateTime(deployment.createdAt)}</p>
-                        </div>
-                        {deployment.id === activeSite.activeDeploymentId ? (
-                          <span className="status-inline row-state row-state-ok">
-                            <span className="status-dot" aria-hidden />
-                            目前上線
-                          </span>
-                        ) : (
-                          <SecondaryButton onClick={() => void handleActivate(deployment.id)} disabled={isBusy}>
-                            <RotateCcw className="h-4 w-4" aria-hidden />
-                            回滾到此版
-                          </SecondaryButton>
-                        )}
+                  {deployments.length === 0 ? (
+                    <EmptyState title="尚無部署" copy="用 Gemini 生成，或上傳包含 index.html 的 ZIP。" />
+                  ) : (
+                    <div className="data-table deployment-table deployment-table-wide">
+                      <div className="data-table-head">
+                        <span>版本</span>
+                        <span>部署時間</span>
+                        <span>來源</span>
+                        <span>檔案</span>
+                        <span>大小</span>
+                        <span>操作</span>
                       </div>
-                    ))}
-                  </div>
+                      {deployments.map((deployment) => (
+                        <div key={deployment.id} className="data-table-row">
+                          <span className="row-version">v{deployment.version}</span>
+                          <span>{dateTime(deployment.createdAt)}</span>
+                          <span>{deployment.originalName.toLowerCase().includes("gemini") ? "AI 生成" : "上傳 ZIP"}</span>
+                          <span>{deployment.fileCount}</span>
+                          <span>{formatBytes(deployment.totalBytes)}</span>
+                          <span className="table-actions">
+                            {deployment.id === activeSite.activeDeploymentId ? (
+                              <span className="row-state row-state-ok">
+                                <span className="status-dot" aria-hidden />
+                                目前上線
+                              </span>
+                            ) : (
+                              <SecondaryButton onClick={() => void handleActivate(deployment.id)} disabled={isBusy}>
+                                <RotateCcw className="h-4 w-4" aria-hidden />
+                                回滾
+                              </SecondaryButton>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </section>
               )}
 
               {activeTab === "domains" && (
-                <section className="party-section-card" data-animate="tab-panel">
+                <section className="operations-panel" data-animate="tab-panel">
                   <div className="section-toolbar">
-                    <div className="party-heading">
-                      <span className="party-heading-icon"><Globe2 className="h-5 w-5" aria-hidden /></span>
-                      <div>
-                        <h2 className="party-section-title">網域</h2>
-                      </div>
-                    </div>
+                    <h2 className="party-section-title">網域設定</h2>
                     <PrimaryButton onClick={() => setPanelMode("add-domain")} disabled={isBusy}>
                       <Plus className="h-4 w-4" aria-hidden />
                       新增網域
                     </PrimaryButton>
                   </div>
 
-                  <div className="code-row mt-5">
-                    <code className="truncate font-mono text-sm text-slate-700">{cnameTarget}</code>
-                    <IconButton label="複製 CNAME target" onClick={() => void copyText(cnameTarget, "CNAME target 已複製")}>
-                      <Copy className="h-4 w-4" aria-hidden />
-                    </IconButton>
+                  <div className="domain-target domain-target-wide">
+                    <span className="field-label">CNAME 目標</span>
+                    <div className="code-row">
+                      <code className="truncate font-mono text-sm">{cnameTarget}</code>
+                      <IconButton label="複製 CNAME target" onClick={() => void copyText(cnameTarget, "CNAME target 已複製")}>
+                        <Copy className="h-4 w-4" aria-hidden />
+                      </IconButton>
+                    </div>
                   </div>
 
-                  <div className="domain-guide">
-                    在 DNS 後台新增 CNAME，值指向上方 target，生效後回來驗證。
-                  </div>
-
-                  <div className="mt-5 grid gap-3">
+                  <div className="data-table domain-table">
+                    <div className="data-table-head">
+                      <span>網域</span>
+                      <span>狀態</span>
+                      <span>最後驗證</span>
+                      <span>操作</span>
+                    </div>
                     {domains.length === 0 ? (
-                      <EmptyState title="尚無自訂網域" copy={`新增後將 CNAME 指向 ${cnameTarget}。`} />
+                      <div className="data-table-row data-table-empty">
+                        <span>尚無自訂網域</span>
+                      </div>
                     ) : domains.map((domain) => (
-                      <div key={domain.id} className="domain-row">
-                        <div className="min-w-0">
-                          <p className="party-list-title truncate">{domain.hostname}</p>
-                          <p className="party-section-copy text-sm">Target: {domain.cnameTarget} · 上次檢查：{shortDate(domain.lastCheckedAt)}</p>
-                          {domain.lastError && <p className="mt-1 text-sm text-[#b3261e]">{domain.lastError}</p>}
-                        </div>
+                      <div key={domain.id} className="data-table-row">
+                        <span className="truncate">{domain.hostname}</span>
                         <StatusText status={domain.status} />
-                        <div className="row-actions justify-start">
+                        <span>{shortDate(domain.lastCheckedAt)}</span>
+                        <span className="table-actions">
                           <SecondaryButton onClick={() => void handleVerifyDomain(domain.id)} disabled={isBusy}>
                             <RefreshCw className="h-4 w-4" aria-hidden />
-                            下一步
+                            驗證
                           </SecondaryButton>
-                          <DangerButton onClick={() => setDomainPendingDelete(domain)} disabled={isBusy}>
+                          <IconButton label={`移除 ${domain.hostname}`} onClick={() => setDomainPendingDelete(domain)} disabled={isBusy}>
                             <Trash2 className="h-4 w-4" aria-hidden />
-                          </DangerButton>
-                        </div>
+                          </IconButton>
+                        </span>
+                        {domain.lastError && <p className="domain-error">{domain.lastError}</p>}
                       </div>
                     ))}
                   </div>
@@ -1511,46 +1486,39 @@ export function Dashboard() {
               )}
 
               {activeTab === "settings" && (
-                <section className="grid gap-4" data-animate="tab-panel">
-                  <section className="party-section-card">
-                    <div className="section-toolbar">
-                      <div className="party-heading">
-                        <span className="party-heading-icon"><Settings className="h-5 w-5" aria-hidden /></span>
-                        <div>
-                          <h2 className="party-section-title">設定</h2>
-                        </div>
-                      </div>
-                    </div>
+                <section className="operations-panel" data-animate="tab-panel">
+                  <div className="section-toolbar">
+                    <h2 className="party-section-title">設定</h2>
+                  </div>
 
-                    <div className="mt-5 grid gap-3">
-                      <div className="settings-row">
-                        <div>
-                          <p className="party-list-title">網站名稱</p>
-                          <p className="party-section-copy text-sm">{activeSite.name}</p>
-                        </div>
-                        <SecondaryButton
-                          onClick={() => {
-                            setSiteSettingsName(activeSite.name);
-                            setPanelMode("rename-site");
-                          }}
-                          disabled={isBusy}
-                        >
-                          <Pencil className="h-4 w-4" aria-hidden />
-                          重新命名
-                        </SecondaryButton>
+                  <div className="settings-list">
+                    <div className="settings-row">
+                      <div>
+                        <p className="party-list-title">網站名稱</p>
+                        <p className="party-section-copy text-sm">{activeSite.name}</p>
                       </div>
-                      <div className="settings-row border-[#f4c7c3] bg-[#fff8f7]">
-                        <div>
-                          <p className="party-list-title text-[#b3261e]">刪除網站</p>
-                          <p className="party-section-copy text-sm">刪除後會移除網站、部署版本與網域設定。</p>
-                        </div>
-                        <DangerButton onClick={() => setPanelMode("delete-site")} disabled={isBusy}>
-                          <Trash2 className="h-4 w-4" aria-hidden />
-                          刪除網站
-                        </DangerButton>
-                      </div>
+                      <SecondaryButton
+                        onClick={() => {
+                          setSiteSettingsName(activeSite.name);
+                          setPanelMode("rename-site");
+                        }}
+                        disabled={isBusy}
+                      >
+                        <Pencil className="h-4 w-4" aria-hidden />
+                        重新命名
+                      </SecondaryButton>
                     </div>
-                  </section>
+                    <div className="settings-row settings-row-danger">
+                      <div>
+                        <p className="party-list-title text-[#b3261e]">刪除網站</p>
+                        <p className="party-section-copy text-sm">移除網站、部署版本與網域設定。</p>
+                      </div>
+                      <DangerButton onClick={() => setPanelMode("delete-site")} disabled={isBusy}>
+                        <Trash2 className="h-4 w-4" aria-hidden />
+                        刪除網站
+                      </DangerButton>
+                    </div>
+                  </div>
                 </section>
               )}
             </>
