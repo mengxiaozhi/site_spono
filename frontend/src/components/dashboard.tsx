@@ -26,15 +26,21 @@ import {
   Upload,
   X
 } from "lucide-react";
-import { gsap } from "gsap";
 import type { FormEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, apiRequest, formatBytes, type Deployment, type Domain, type GenerationJob, type Site, type User } from "@/lib/api";
-
-type AuthMode = "login" | "register";
-type DashboardTab = "overview" | "deployments" | "domains" | "settings";
-type SecondaryPanel = "create-site" | "generate-site" | "upload" | "add-domain" | "rename-site" | "delete-site" | null;
-type PublishStepStatus = "done" | "current" | "todo";
+import {
+  delay,
+  formatDateTime,
+  formatShortDateTime,
+  getDomainSummary,
+  getPublishProgress,
+  type AuthMode,
+  type DashboardTab,
+  type PublishStepStatus,
+  type SecondaryPanel
+} from "@/components/dashboard/model";
+import { prefersReducedMotion, runGsapAnimation, useScopedGsapAnimation } from "@/components/dashboard/motion";
 type NextStepActionConfig = {
   disabled?: boolean;
   href?: string;
@@ -149,37 +155,6 @@ function NextStepCard({
       </div>
     </section>
   );
-}
-
-function prefersReducedMotion() {
-  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
-function dateTime(value: string | null) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat("zh-Hant", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(new Date(value));
-}
-
-function wait(ms: number) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
-
-function shortDate(value: string | null) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat("zh-Hant", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(new Date(value));
 }
 
 function StatusText({ status }: { status: Domain["status"] }) {
@@ -357,24 +332,18 @@ function Drawer({
 }) {
   const drawerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open || !drawerRef.current || prefersReducedMotion()) return;
-
-    const ctx = gsap.context(() => {
-      gsap.fromTo(drawerRef.current, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.18, ease: "power2.out" });
-      gsap.fromTo(
-        ".drawer-panel",
-        { xPercent: 100 },
-        { xPercent: 0, duration: 0.38, ease: "power3.out", clearProps: "transform" }
-      );
-      gsap.fromTo(
-        "[data-animate='panel-item']",
-        { autoAlpha: 0, y: 8 },
-        { autoAlpha: 1, y: 0, duration: 0.26, stagger: 0.04, delay: 0.12, ease: "power2.out", clearProps: "all" }
-      );
-    }, drawerRef);
-
-    return () => ctx.revert();
+  useScopedGsapAnimation(drawerRef, open, (gsap, root) => {
+    gsap.fromTo(root, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.18, ease: "power2.out" });
+    gsap.fromTo(
+      ".drawer-panel",
+      { xPercent: 100 },
+      { xPercent: 0, duration: 0.38, ease: "power3.out", clearProps: "transform" }
+    );
+    gsap.fromTo(
+      "[data-animate='panel-item']",
+      { autoAlpha: 0, y: 8 },
+      { autoAlpha: 1, y: 0, duration: 0.26, stagger: 0.04, delay: 0.12, ease: "power2.out", clearProps: "all" }
+    );
   }, [open]);
 
   if (!open) return null;
@@ -386,10 +355,13 @@ function Drawer({
       return;
     }
 
-    const panel = drawerRef.current.querySelector(".drawer-panel");
-    gsap.timeline({ onComplete: onClose })
-      .to(panel, { xPercent: 100, duration: 0.24, ease: "power2.in" })
-      .to(drawerRef.current, { autoAlpha: 0, duration: 0.16, ease: "power2.out" }, 0);
+    const root = drawerRef.current;
+    const panel = root.querySelector(".drawer-panel");
+    runGsapAnimation((gsap) => {
+      gsap.timeline({ onComplete: onClose })
+        .to(panel, { xPercent: 100, duration: 0.24, ease: "power2.in" })
+        .to(root, { autoAlpha: 0, duration: 0.16, ease: "power2.out" }, 0);
+    });
   }
 
   return (
@@ -439,19 +411,13 @@ function ConfirmDialog({
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open || !dialogRef.current || prefersReducedMotion()) return;
-
-    const ctx = gsap.context(() => {
-      gsap.fromTo(dialogRef.current, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.16, ease: "power2.out" });
-      gsap.fromTo(
-        ".dialog-panel",
-        { autoAlpha: 0, scale: 0.96, y: 10 },
-        { autoAlpha: 1, scale: 1, y: 0, duration: 0.26, ease: "power3.out", clearProps: "all" }
-      );
-    }, dialogRef);
-
-    return () => ctx.revert();
+  useScopedGsapAnimation(dialogRef, open, (gsap, root) => {
+    gsap.fromTo(root, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.16, ease: "power2.out" });
+    gsap.fromTo(
+      ".dialog-panel",
+      { autoAlpha: 0, scale: 0.96, y: 10 },
+      { autoAlpha: 1, scale: 1, y: 0, duration: 0.26, ease: "power3.out", clearProps: "all" }
+    );
   }, [open]);
 
   if (!open) return null;
@@ -463,10 +429,13 @@ function ConfirmDialog({
       return;
     }
 
-    const panel = dialogRef.current.querySelector(".dialog-panel");
-    gsap.timeline({ onComplete: onClose })
-      .to(panel, { autoAlpha: 0, scale: 0.96, y: 8, duration: 0.16, ease: "power2.in" })
-      .to(dialogRef.current, { autoAlpha: 0, duration: 0.14, ease: "power2.out" }, 0);
+    const root = dialogRef.current;
+    const panel = root.querySelector(".dialog-panel");
+    runGsapAnimation((gsap) => {
+      gsap.timeline({ onComplete: onClose })
+        .to(panel, { autoAlpha: 0, scale: 0.96, y: 8, duration: 0.16, ease: "power2.in" })
+        .to(root, { autoAlpha: 0, duration: 0.14, ease: "power2.out" }, 0);
+    });
   }
 
   return (
@@ -565,6 +534,7 @@ export function Dashboard() {
   const [message, setMessage] = useState<string | null>(null);
   const rootRef = useRef<HTMLElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const detailsRequestRef = useRef(0);
 
   const activeSite = useMemo(
     () => sites.find((site) => site.id === activeSiteId) ?? sites[0] ?? null,
@@ -574,17 +544,15 @@ export function Dashboard() {
     () => deployments.find((deployment) => deployment.id === activeSite?.activeDeploymentId) ?? null,
     [activeSite?.activeDeploymentId, deployments]
   );
-  const verifiedDomains = domains.filter((domain) => domain.status === "verified").length;
-  const unverifiedDomain = domains.find((domain) => domain.status !== "verified") ?? null;
+  const domainSummary = useMemo(() => getDomainSummary(domains), [domains]);
+  const verifiedDomains = domainSummary.verifiedCount;
+  const unverifiedDomain = domainSummary.firstUnverified;
   const hasDeployment = Boolean(activeDeployment);
   const hasVerifiedDomain = verifiedDomains > 0;
-  const guideTotal = 4;
-  const currentGuideStep = !activeSite ? 1 : !hasDeployment ? 2 : !hasVerifiedDomain ? 3 : 4;
-  const completedGuideSteps =
-    (activeSite ? 1 : 0) +
-    (hasDeployment ? 1 : 0) +
-    (hasVerifiedDomain ? 1 : 0) +
-    (hasDeployment && hasVerifiedDomain ? 1 : 0);
+  const publishProgress = getPublishProgress(activeSite, hasDeployment, hasVerifiedDomain);
+  const guideTotal = publishProgress.totalSteps;
+  const currentGuideStep = publishProgress.currentStep;
+  const completedGuideSteps = publishProgress.completedSteps;
 
   function clearSessionState(nextMessage = "登入狀態已失效，請重新登入") {
     setUser(null);
@@ -607,46 +575,28 @@ export function Dashboard() {
     setMessage(error instanceof Error ? error.message : fallbackMessage);
   }
 
-  useEffect(() => {
-    if (isBooting || !rootRef.current || prefersReducedMotion()) return;
-
-    const ctx = gsap.context(() => {
-      gsap.fromTo(
-        "[data-animate='intro']",
-        { autoAlpha: 0, y: 16 },
-        { autoAlpha: 1, y: 0, duration: 0.46, stagger: 0.06, ease: "power3.out", clearProps: "all" }
-      );
-    }, rootRef);
-
-    return () => ctx.revert();
+  useScopedGsapAnimation(rootRef, !isBooting, (gsap) => {
+    gsap.fromTo(
+      "[data-animate='intro']",
+      { autoAlpha: 0, y: 16 },
+      { autoAlpha: 1, y: 0, duration: 0.46, stagger: 0.06, ease: "power3.out", clearProps: "all" }
+    );
   }, [isBooting, Boolean(user)]);
 
-  useEffect(() => {
-    if (!user || isBooting || !rootRef.current || prefersReducedMotion()) return;
+  useScopedGsapAnimation(rootRef, Boolean(user) && !isBooting, (gsap) => {
+    gsap.fromTo(
+      "[data-animate='tab-panel']",
+      { autoAlpha: 0, y: 12 },
+      { autoAlpha: 1, y: 0, duration: 0.32, ease: "power2.out", clearProps: "all" }
+    );
+  }, [activeSite?.id, activeTab, isBooting, Boolean(user)]);
 
-    const ctx = gsap.context(() => {
-      gsap.fromTo(
-        "[data-animate='tab-panel']",
-        { autoAlpha: 0, y: 12 },
-        { autoAlpha: 1, y: 0, duration: 0.32, ease: "power2.out", clearProps: "all" }
-      );
-    }, rootRef);
-
-    return () => ctx.revert();
-  }, [activeSite?.id, activeTab, isBooting, user]);
-
-  useEffect(() => {
-    if (!message || !rootRef.current || prefersReducedMotion()) return;
-
-    const ctx = gsap.context(() => {
-      gsap.fromTo(
-        "[data-animate='toast']",
-        { autoAlpha: 0, y: -8 },
-        { autoAlpha: 1, y: 0, duration: 0.24, ease: "power2.out", clearProps: "all" }
-      );
-    }, rootRef);
-
-    return () => ctx.revert();
+  useScopedGsapAnimation(rootRef, Boolean(message), (gsap) => {
+    gsap.fromTo(
+      "[data-animate='toast']",
+      { autoAlpha: 0, y: -8 },
+      { autoAlpha: 1, y: 0, duration: 0.24, ease: "power2.out", clearProps: "all" }
+    );
   }, [message]);
 
   async function loadSites(nextActiveId?: string) {
@@ -656,10 +606,13 @@ export function Dashboard() {
   }
 
   async function loadDetails(siteId: string) {
+    const requestId = detailsRequestRef.current + 1;
+    detailsRequestRef.current = requestId;
     const [deploymentData, domainData] = await Promise.all([
       apiRequest<{ deployments: Deployment[] }>(`/api/sites/${siteId}/deployments`),
       apiRequest<{ domains: Domain[]; cnameTarget: string }>(`/api/sites/${siteId}/domains`)
     ]);
+    if (requestId !== detailsRequestRef.current) return;
     setDeployments(deploymentData.deployments);
     setDomains(domainData.domains);
     setCnameTarget(domainData.cnameTarget);
@@ -689,7 +642,7 @@ export function Dashboard() {
         throw new Error(data.job.error || "Gemini 生成失敗");
       }
 
-      await wait(1500);
+      await delay(1500);
     }
 
     throw new Error("Gemini 仍在生成中，請稍後重新整理查看結果");
@@ -698,14 +651,11 @@ export function Dashboard() {
   async function bootstrap() {
     setIsBooting(true);
     try {
-      try {
-        const demo = await apiRequest<{ enabled: boolean }>("/api/demo/status");
-        setDemoEnabled(demo.enabled);
-      } catch {
-        setDemoEnabled(false);
-      }
-
-      const data = await apiRequest<{ user: User | null }>("/api/auth/me");
+      const [demoResult, data] = await Promise.all([
+        apiRequest<{ enabled: boolean }>("/api/demo/status").catch(() => ({ enabled: false })),
+        apiRequest<{ user: User | null }>("/api/auth/me")
+      ]);
+      setDemoEnabled(demoResult.enabled);
       setUser(data.user);
       if (data.user) {
         await loadSites();
@@ -723,13 +673,14 @@ export function Dashboard() {
 
   useEffect(() => {
     if (!activeSite) {
+      detailsRequestRef.current += 1;
       setDeployments([]);
       setDomains([]);
       setSiteSettingsName("");
       return;
     }
     setSiteSettingsName(activeSite.name);
-    void loadDetails(activeSite.id);
+    void loadDetails(activeSite.id).catch((error) => handleApiError(error, "讀取網站資料失敗"));
   }, [activeSite?.id]);
 
   function closePanel() {
@@ -847,8 +798,11 @@ export function Dashboard() {
       setAiContact("");
       if (!activeSite) setAiSiteName("");
       setPanelMode(null);
-      await loadSites(data.site.id);
-      await loadDetails(data.site.id);
+      if (activeSite) {
+        await Promise.all([loadSites(data.site.id), loadDetails(data.site.id)]);
+      } else {
+        await loadSites(data.site.id);
+      }
       setActiveTab("overview");
       setMessage(`Gemini 已生成 v${data.deployment.version}，下一步請設定網域：${data.generated.summary || "已建立部署版本"}`);
     } catch (error) {
@@ -873,8 +827,7 @@ export function Dashboard() {
       setUploadFile(null);
       setPanelMode(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      await loadSites(data.site.id);
-      await loadDetails(data.site.id);
+      await Promise.all([loadSites(data.site.id), loadDetails(data.site.id)]);
       setActiveTab("overview");
       setMessage(`部署 v${data.deployment.version} 已啟用，下一步請設定網域`);
     } catch (error) {
@@ -890,8 +843,7 @@ export function Dashboard() {
     setMessage(null);
     try {
       await apiRequest(`/api/sites/${activeSite.id}/deployments/${deploymentId}/activate`, { method: "POST" });
-      await loadSites(activeSite.id);
-      await loadDetails(activeSite.id);
+      await Promise.all([loadSites(activeSite.id), loadDetails(activeSite.id)]);
       setMessage("部署版本已切換");
     } catch (error) {
       handleApiError(error, "切換版本失敗");
@@ -1234,7 +1186,7 @@ export function Dashboard() {
 
                   <div className="site-meta-row">
                     <span>版本 {activeDeployment ? `v${activeDeployment.version}` : "-"}</span>
-                    <span>最新部署 {activeDeployment ? dateTime(activeDeployment.createdAt) : "-"}</span>
+                    <span>最新部署 {activeDeployment ? formatDateTime(activeDeployment.createdAt) : "-"}</span>
                     <span>網站大小 {activeDeployment ? formatBytes(activeDeployment.totalBytes) : "-"}</span>
                   </div>
                 </div>
@@ -1311,7 +1263,7 @@ export function Dashboard() {
                         {deployments.map((deployment) => (
                           <div key={deployment.id} className="data-table-row">
                             <span className="row-version">v{deployment.version}</span>
-                            <span>{dateTime(deployment.createdAt)}</span>
+                            <span>{formatDateTime(deployment.createdAt)}</span>
                             <span>{deployment.originalName.toLowerCase().includes("gemini") ? "AI 生成" : "上傳 ZIP"}</span>
                             <span>{formatBytes(deployment.totalBytes)}</span>
                             <span className="table-actions">
@@ -1361,7 +1313,7 @@ export function Dashboard() {
                         <div key={domain.id} className="domain-line">
                           <div className="min-w-0">
                             <p className="party-list-title truncate">{domain.hostname}</p>
-                            <p className="party-section-copy text-xs">最後驗證 {shortDate(domain.lastCheckedAt)}</p>
+                            <p className="party-section-copy text-xs">最後驗證 {formatShortDateTime(domain.lastCheckedAt)}</p>
                             {domain.lastError && <p className="mt-1 text-sm text-[#b3261e]">{domain.lastError}</p>}
                           </div>
                           <StatusText status={domain.status} />
@@ -1409,7 +1361,7 @@ export function Dashboard() {
                       {deployments.map((deployment) => (
                         <div key={deployment.id} className="data-table-row">
                           <span className="row-version">v{deployment.version}</span>
-                          <span>{dateTime(deployment.createdAt)}</span>
+                          <span>{formatDateTime(deployment.createdAt)}</span>
                           <span>{deployment.originalName.toLowerCase().includes("gemini") ? "AI 生成" : "上傳 ZIP"}</span>
                           <span>{deployment.fileCount}</span>
                           <span>{formatBytes(deployment.totalBytes)}</span>
@@ -1468,7 +1420,7 @@ export function Dashboard() {
                       <div key={domain.id} className="data-table-row">
                         <span className="truncate">{domain.hostname}</span>
                         <StatusText status={domain.status} />
-                        <span>{shortDate(domain.lastCheckedAt)}</span>
+                        <span>{formatShortDateTime(domain.lastCheckedAt)}</span>
                         <span className="table-actions">
                           <SecondaryButton onClick={() => void handleVerifyDomain(domain.id)} disabled={isBusy}>
                             <RefreshCw className="h-4 w-4" aria-hidden />
